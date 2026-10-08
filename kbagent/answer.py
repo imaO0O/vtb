@@ -383,6 +383,22 @@ def wrong_case(question: str, text: str) -> dict | None:
     return None
 
 
+def case_note(question: str, hits: list[Hit]) -> str:
+    """Пояснение из data/cases.yaml заранее: вопрос о таком случае, а во фрагментах рядом правила и для соседнего
+    (или то, что задано в context)."""
+    context = " ".join(h.chunk.text for h in hits)
+
+    def found(case: dict) -> bool:
+        if case.get("context"):
+            return bool(re.search(case["context"], context, re.I))
+        return bool(re.search(case["wrong"], context, re.I) and re.search(case["right"], context, re.I))
+
+    notes = [case["note"].strip() for case in CASES
+             if case.get("note") and re.search(case["question"], question, re.I)
+             and not (case.get("unless") and re.search(case["unless"], question, re.I)) and found(case)]
+    return "".join(f"\n\nПояснение: {n}" for n in notes)
+
+
 def missing_subject(question: str, hits: list[Hit], cited: list[int]) -> str | None:
     """Налог из вопроса, о котором в процитированных фрагментах ничего нет."""
     text = " ".join(f"{hits[n - 1].chunk.heading or ''} {hits[n - 1].chunk.text}" for n in cited)
@@ -438,7 +454,7 @@ def answer_from_documents(question: str, retrieval: Retrieval, facts: str | None
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Фрагменты закона и разъяснений ФНС:\n\n{_context(hits)}\n\n{facts_block}"
-                                    f"Вопрос: {shown}\n\n"
+                                    f"Вопрос: {shown}{case_note(question, hits)}\n\n"
                                     "Ответь по существу и простыми словами: приведи конкретные сведения из фрагментов "
                                     f"(суммы, проценты, сроки, условия) со ссылками [n].{facts_rule} "
                                     f"Если ответа во фрагментах нет — {NO_DATA}."},

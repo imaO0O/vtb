@@ -51,7 +51,8 @@ class Chunk:
     item: str | None = None      # пункт части (подпункт в НК РФ): «8», «1–7»
     short: str | None = None     # краткое название документа для ссылки: «422-ФЗ», «НК РФ»
     url: str | None = None       # где прочитать статью или разъяснение в оригинале
-    topic: str | None = None     # тема документа для поиска: у 456-ФЗ в тексте нет слов «самозанятый» и «больничный»
+    topic: str | None = None     # тема документа или статьи для поиска: у 456-ФЗ в тексте нет слов «самозанятый» и
+    #                              «больничный», у статьи 1 422-ФЗ из заголовка не видно, о каком эксперименте речь
     part_word: str = "ч."        # как называется часть статьи в ссылке («ч.» или «п.»)
     item_word: str = "п."        # и пункт части («п.» или «пп.»)
 
@@ -425,11 +426,15 @@ def _law_chunks(units: list[_LawUnit], meta: dict) -> list[Chunk]:
         if first.item and first.lead and first.lead not in text:
             text = f"{first.lead} …\n{text}"
         one_part = len(set(parts)) == 1
+        # тема части статьи («1:2») или всей статьи («1»), иначе — тема документа
+        keys = [f"{first.article}:{p}" for p in parts] + [first.article]
+        topics = meta.get("topics") or {}
+        topic = next((topics[k] for k in keys if k in topics), meta.get("topic"))
         base = dict(doc_id=meta["id"], doc_title=meta["title"], doc_kind=meta["kind"], access=meta["access"],
                     heading=first.title, page_start=None, page_end=None, article=first.article,
                     clause=_range(parts), item=_range(items) if one_part else None, short=meta.get("short"),
                     url=first.url, part_word=meta.get("part", "ч."), item_word=meta.get("item", "п."),
-                    topic=meta.get("topic"))
+                    topic=topic)
         pieces = _split_long(text) if len(text) > MAX_LEN else [(0, text)]
         for k, (_, piece) in enumerate(pieces):
             if k:
@@ -497,6 +502,7 @@ def parse_document(path: Path, catalog: dict, stats: dict | None = None) -> list
         "access": access_of(info),
         "short": info.get("short"), "url": info.get("url"), "part": info.get("part", "ч."),
         "item": info.get("item", "п."), "outdated": info.get("outdated", []), "topic": info.get("topic"),
+        "topics": {str(k): v for k, v in (info.get("topics") or {}).items()},
         "basis_label": info.get("basis_label"),
     }
     if path.suffix.lower() == ".txt":
