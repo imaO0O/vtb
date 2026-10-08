@@ -1,0 +1,19 @@
+# Автотесты логики агента при каждом изменении (без языковых моделей).
+# Качество ответов с моделями проверяется отдельно: python eval/run_eval.py на компьютере с моделями.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest tests -q
