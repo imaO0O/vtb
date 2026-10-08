@@ -59,3 +59,10 @@ def test_faq_question_becomes_heading_and_outdated_answers_are_skipped():
     assert len(chunks) == 1
     assert chunks[0].heading == "Какой срок уплаты налога?"
     assert "Основание, указанное ФНС: ч. 3 ст. 11" in chunks[0].text
+
+
+def test_law_text_keeps_item_numbers_in_markdown():
+    from kbagent.text import law_text
+    shown = law_text("2. Не признаются объектом: …\n10) от уступки прав требований;")
+    # номер не превращается в пункт нумерованного списка, а строки остаются отдельными абзацами
+    assert shown.splitlines() == [r"2\. Не признаются объектом: …", "", r"10\) от уступки прав требований;"]

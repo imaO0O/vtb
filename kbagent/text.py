@@ -43,6 +43,13 @@ def join_hyphenated(lines: list[str]) -> list[str]:
     return out
 
 
+def law_text(text: str) -> str:
+    """Текст статьи для показа в Markdown как в законе: «8) …» и «2. …» — не нумерованный список. Иначе Markdown
+    перенумерует пункты подряд, и после утратившего силу пункта номера сдвинутся («10)» покажется как «9.»)."""
+    lines = [re.sub(r"^(\s*\d+(?:\.\d+)*)([.)])", r"\1\\\2", line) for line in text.split("\n")]
+    return "\n\n".join(line.replace("*", "\\*") for line in lines)
+
+
 @lru_cache(maxsize=200_000)
 def _stem(word: str) -> str:
     if re.match(r"[a-z]", word):
