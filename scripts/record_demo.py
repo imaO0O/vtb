@@ -5,7 +5,8 @@
     python scripts/record_demo.py --url http://localhost:8502
 
 Сценарий — docs/demo_script.md: подсказки банка по счёту Ани, источник ответа, вопрос разговорным языком,
-честный отказ, Максим у лимита — сравнение с ИП и прогноз, страница «Для банка». Подписи выводятся поверх
+честный отказ, уведомление в момент поступления и чек одним нажатием, Максим — оплата, с которой доход превысил
+лимит, и сравнение с ИП, «подходит ли мне», страница «Для банка»; отдельно — экраны телефона. Подписи выводятся поверх
 страницы, чтобы видео было понятно без звука. Нужен Microsoft Edge (Playwright запускает его как Chromium);
 кадры снимаются через DevTools (screencast) и собираются в MP4 программой ffmpeg из пакета imageio-ffmpeg.
 """
@@ -155,14 +156,18 @@ def run(url: str, pause: float, headless: bool) -> Path:
         d.scroll_bottom()
         d.shot("05_chestnyy_otkaz")
 
+        d.click(page.get_by_role("button", name=re.compile("Тимур")))
+        d.scroll_top()
+        d.caption("Пришёл перевод — помощник сразу пишет: это оплата? Срок чека, налог с неё, основание в законе", 4.5)
+        d.shot("17_push")
+        d.click(page.get_by_role("button", name=re.compile("Сформировать чек$")))
+        d.caption("Чек — одним нажатием в момент оплаты: банк передаёт его в ФНС как партнёр", 3)
         page.get_by_text("Чеки и сроки", exact=True).first.click()
         d.idle()
-        d.caption("Не только совет, но и действие: «Спасибо!» от Кирилла — это оплата за работу?", 4)
-        d.click(page.get_by_role("button", name=re.compile("Оплата за работу")).first)
-        d.caption("Черновик чека по реквизитам ч. 6 ст. 14 — сформировать через банк в одно нажатие", 4)
+        d.scroll_by(260)
         d.shot("11_cheki")
-        d.click(page.get_by_role("button", name=re.compile("Сформировать чек через банк")).first)
-        d.scroll_by(900)
+        page.get_by_text("Ближайшие сроки").scroll_into_view_if_needed()
+        page.wait_for_timeout(700)
         d.caption("Календарь: срок чека, уведомление ФНС до 12-го, налог до 28-го, автоплатёж через банк", 4)
         d.shot("12_sroki")
 
@@ -173,12 +178,15 @@ def run(url: str, pause: float, headless: bool) -> Path:
         d.idle()
         d.scroll_top()
         d.scroll_by(330)
-        d.caption("Максим: 2,25 млн ₽ с начала года. При нынешнем темпе лимит закончится около 27 октября", 4.5)
+        d.caption("Максим: 2,25 млн ₽ с начала года. При нынешнем темпе лимит закончится около 27 октября", 4)
         d.shot("06_maksim_u_limita")
+        d.click(page.get_by_role("button", name=re.compile("Северный ветер")))
         d.scroll_top()
-        d.click(page.get_by_role("button", name=re.compile("Следующий шаг")))
+        d.caption("Пришло 160 000 ₽ — лимит превышен. Помощник говорит в тот же день: чек не нужен, 20 дней на УСН", 4.5)
+        d.shot("18_push_limit")
+        d.click(page.get_by_role("button", name=re.compile("ИП или самозанятость")).first)
         d.scroll_bottom()
-        d.caption("Самозанятость или ИП — расчёт на его доходе по НК РФ, и предложение открыть ИП и счёт заранее", 5)
+        d.caption("Сколько будет стоить ИП на его доходе — по НК РФ, и предложение банка открыть ИП и счёт", 4)
         d.shot("07_ip_ili_samozanyatost")
 
         page.locator('[data-testid="stSelectbox"]').first.click()
@@ -205,23 +213,52 @@ def run(url: str, pause: float, headless: bool) -> Path:
         page.get_by_role("tab", name="Экономика").click()
         page.wait_for_timeout(800)
         d.shot("16_ekonomika")
-        d.caption("GigaChat 3.1 Lightning внутри контура банка · ответ ~1 с · 61 из 63 ответов по закону верны", 4)
+        d.caption("GigaChat 3.1 Lightning внутри контура банка · ответ ~1 с · по закону верно 64 из 64 "
+                  "на основном наборе и 21 из 25 на отложенном", 4)
         cdp.send("Page.stopScreencast")
         context.close()
 
-        # мобильный экран — для презентации
-        mobile = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, locale="ru-RU",
-                                     is_mobile=True, has_touch=True)
-        mpage = mobile.new_page()
-        mpage.goto(url)
-        mpage.wait_for_selector("textarea", timeout=120000)
-        mobile_demo = Demo(mpage, pause)
-        mobile_demo.idle()
-        mobile_demo.scroll_top()
-        mpage.screenshot(path=str(SCREENS / "10_telefon.png"), full_page=False)
-        mobile.close()
+        phone(browser, url, pause)
         browser.close()
     return frames
+
+
+def phone(browser, url: str, pause: float) -> None:
+    """Экраны телефона для презентации: главный экран, уведомление о переводе, превышение лимита."""
+    mobile = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, locale="ru-RU",
+                                 is_mobile=True, has_touch=True)
+    page = mobile.new_page()
+    d = Demo(page, pause)
+    page.goto(url)
+    page.wait_for_selector("textarea", timeout=120000)
+    d.idle()
+    d.scroll_top()
+    d.scroll_by(420)
+    d.shot("10_telefon")
+
+    def sidebar(action) -> None:
+        page.locator('[data-testid="stExpandSidebarButton"]').first.click()
+        page.wait_for_timeout(700)
+        action()
+        d.idle()
+        close = page.locator('[data-testid="stSidebarCollapseButton"] button, [data-testid="stSidebarCollapseButton"]')
+        if close.count():
+            close.first.click()
+            page.wait_for_timeout(700)
+
+    sidebar(lambda: page.get_by_role("button", name=re.compile("Тимур")).click())
+    d.scroll_top()
+    d.shot("19_telefon_push")
+
+    def to_max() -> None:
+        page.locator('[data-testid="stSelectbox"]').first.click()
+        page.get_by_role("option", name=re.compile("Максим")).click()
+        d.idle()
+        page.get_by_role("button", name=re.compile("Северный ветер")).click()
+    sidebar(to_max)
+    d.scroll_top()
+    d.shot("20_telefon_limit")
+    mobile.close()
 
 
 def to_mp4(frames: list[tuple[float, bytes]], target: Path) -> Path:
@@ -236,7 +273,7 @@ def to_mp4(frames: list[tuple[float, bytes]], target: Path) -> Path:
             name = Path(tmp) / f"f{k:05d}.jpg"
             name.write_bytes(data)
             duration = ((frames[k + 1][0] - t) if k + 1 < len(frames) else 2.0) / speed
-            lines += [f"file '{name.as_posix()}'", f"duration {max(duration, 0.04):.3f}"]
+            lines += [f"file '{name.as_posix()}'", f"duration {max(duration, 0.001):.3f}"]
         lines.append(f"file '{(Path(tmp) / f'f{len(frames) - 1:05d}.jpg').as_posix()}'")
         concat = Path(tmp) / "frames.txt"
         concat.write_text("\n".join(lines), encoding="utf-8")
@@ -245,7 +282,29 @@ def to_mp4(frames: list[tuple[float, bytes]], target: Path) -> Path:
                         "-vf", "fps=25,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:white",
                         "-c:v", "libx264", "-preset", "slow", "-crf", "24", "-pix_fmt", "yuv420p",
                         "-movflags", "+faststart", str(target)], check=True)
-    return target
+    return fit(target)
+
+
+def duration(path: Path) -> float:
+    import imageio_ffmpeg
+    out = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-i", str(path)], capture_output=True, text=True).stderr
+    h, m, sec = re.search(r"Duration: (\d+):(\d+):([\d.]+)", out).groups()
+    return int(h) * 3600 + int(m) * 60 + float(sec)
+
+
+def fit(path: Path) -> Path:
+    """Видео длиннее MAX_SECONDS (кадры набора текста идут чаще, чем 25 в секунду) — ускоряем до нужной длины."""
+    import imageio_ffmpeg
+    total = duration(path)
+    if total <= MAX_SECONDS + 1:
+        return path
+    raw = path.with_suffix(".raw.mp4")
+    path.replace(raw)
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(raw),
+                    "-vf", f"setpts=PTS*{MAX_SECONDS / total:.5f},fps=25", "-an", "-c:v", "libx264", "-preset", "slow",
+                    "-crf", "24", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(path)], check=True)
+    raw.unlink()
+    return path
 
 
 def main():
