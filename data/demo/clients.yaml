@@ -1,0 +1,60 @@
+# Демо-клиенты банка для показа помощника. Люди и организации вымышлены.
+# Даты операций задаются относительно сегодняшнего дня, чтобы демо выглядело одинаково в любой день показа:
+#   m — сколько месяцев назад (0 — текущий месяц), d — число месяца (в текущем месяце — не позже сегодняшнего);
+#   kind: work — оплата за работу (профессиональный доход), salary — зарплата, personal — перевод от близких;
+#   payer_kind: person — физическое лицо (ставка 4 %), company — организация или ИП (6 %);
+#   channel: card — перевод на карту (СБП, по номеру карты), account — платёж по реквизитам счёта;
+#   receipt — сформирован ли чек в «Мой налог».
+# year_work_total — сколько всего заработано с начала года: операции прошлых месяцев года достраиваются,
+# чтобы сумма не зависела от дня показа (для клиента у лимита дохода).
+
+clients:
+  - id: anya
+    name: Аня
+    age: 19
+    about: "Студентка, рисует иллюстрации и портреты на заказ. Самозанятая третий месяц."
+    npd_since_months: 2            # встала на учёт как самозанятая — 2 месяца назад
+    deduction_used: 0              # бонус 10 000 ₽ ещё не использован
+    former_employers:
+      - {name: "ООО «Кофейня на Садовой»", inn: "7712345678"}
+    operations:
+      - {m: 5, d: 10, amount: 32000, payer: "ООО «Кофейня на Садовой»", inn: "7712345678", payer_kind: company, channel: account, kind: salary, purpose: "Заработная плата"}
+      - {m: 4, d: 10, amount: 32000, payer: "ООО «Кофейня на Садовой»", inn: "7712345678", payer_kind: company, channel: account, kind: salary, purpose: "Заработная плата"}
+      - {m: 3, d: 25, amount: 18500, payer: "ООО «Кофейня на Садовой»", inn: "7712345678", payer_kind: company, channel: account, kind: salary, purpose: "Окончательный расчёт при увольнении"}
+      - {m: 1, d: 14, amount: 4000, payer: "Ольга В.", payer_kind: person, channel: card, kind: work, purpose: "Портрет по фото", receipt: true}
+      - {m: 1, d: 22, amount: 6500, payer: "Дмитрий С.", payer_kind: person, channel: card, kind: work, purpose: "Иллюстрация для обложки", receipt: true}
+      - {m: 1, d: 27, amount: 12000, payer: "ИП Орлов А. В.", inn: "503412345678", payer_kind: company, channel: account, kind: work, purpose: "Оплата по договору: логотип", receipt: true}
+      - {m: 0, d: 1, amount: 3000, payer: "Мама", payer_kind: person, channel: card, kind: personal, purpose: "На проезд"}
+      - {m: 0, d: 2, amount: 5000, payer: "Мария К.", payer_kind: person, channel: card, kind: work, purpose: "Портрет в подарок", receipt: true}
+      - {m: 0, d: 3, amount: 4500, payer: "Ирина П.", payer_kind: person, channel: card, kind: work, purpose: "За стикерпак", receipt: false}
+      - {m: 0, d: 5, amount: 18000, payer: "ООО «Кофейня на Садовой»", inn: "7712345678", payer_kind: company, channel: account, kind: work, purpose: "Оплата по договору: дизайн меню", receipt: false}
+
+  - id: max
+    name: Максим
+    age: 24
+    about: "Фотограф: свадьбы, портреты, съёмки для брендов. Самозанятый третий год."
+    npd_since_months: 30
+    deduction_used: 10000          # бонус израсходован
+    year_work_total: 2250000
+    operations:
+      - {m: 0, d: 1, amount: 45000, payer: "Анна и Сергей Л.", payer_kind: person, channel: card, kind: work, purpose: "Свадебная съёмка, предоплата", receipt: true}
+      - {m: 0, d: 3, amount: 60000, payer: "ООО «Северный ветер»", inn: "7801234567", payer_kind: company, channel: account, kind: work, purpose: "Оплата по договору: съёмка коллекции", receipt: true}
+      - {m: 0, d: 4, amount: 15000, payer: "Екатерина М.", payer_kind: person, channel: card, kind: work, purpose: "Портретная съёмка", receipt: false}
+
+  - id: liza
+    name: Лиза
+    age: 18
+    about: "Первокурсница, занимается с детьми английским. Пока не самозанятая."
+    npd_since_months: null         # не стоит на учёте как самозанятая
+    deduction_used: 0
+    operations:
+      - {m: 2, d: 6, amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, kind: work, purpose: "За урок"}
+      - {m: 2, d: 13, amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, kind: work, purpose: "За урок"}
+      - {m: 2, d: 20, amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, kind: work, purpose: "За урок"}
+      - {m: 1, d: 3, amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, kind: work, purpose: "За урок"}
+      - {m: 1, d: 10, amount: 3000, payer: "Олег Т.", payer_kind: person, channel: card, kind: work, purpose: "Английский, 2 занятия"}
+      - {m: 1, d: 17, amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, kind: work, purpose: "За урок"}
+      - {m: 1, d: 24, amount: 3000, payer: "Олег Т.", payer_kind: person, channel: card, kind: work, purpose: "Английский, 2 занятия"}
+      - {m: 0, d: 1, amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, kind: work, purpose: "За урок"}
+      - {m: 0, d: 2, amount: 5000, payer: "Папа", payer_kind: person, channel: card, kind: personal, purpose: "На телефон"}
+      - {m: 0, d: 4, amount: 3000, payer: "Олег Т.", payer_kind: person, channel: card, kind: work, purpose: "Английский, 2 занятия"}
