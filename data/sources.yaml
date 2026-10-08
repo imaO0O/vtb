@@ -1,0 +1,83 @@
+# База знаний помощника. Тексты законов не охраняются авторским правом (п. 6 ст. 1259 ГК РФ),
+# поэтому лежат в репозитории (data/raw/). Обновить их из источников: python scripts/fetch_laws.py
+#
+#   structure: law — статьи, части (пункты) и пункты (подпункты); faq — вопрос, ответ и источник
+#   part / item — как называются в ссылке уровни статьи: «ч. 2, п. 8» (422-ФЗ) или «п. 1, пп. 3» (НК РФ)
+#   short — краткое название для ссылки под ответом
+
+documents:
+  - id: fz422
+    file: law/fz422.txt
+    title: "Федеральный закон от 27.11.2018 № 422-ФЗ «О проведении эксперимента по установлению специального налогового режима «Налог на профессиональный доход»"
+    short: "422-ФЗ"
+    kind: "Федеральный закон"
+    structure: law
+    part: "ч."
+    item: "п."
+    edition: "ред. от 28.11.2025 № 425-ФЗ"
+    url: "https://www.consultant.ru/document/cons_doc_LAW_311977/"
+    articles:
+      "1": "512cf86a56df0bdea9fb5f14bba79e01a90ed7a5"
+      "2": "b95cb9fec1c635e413e8e40c9bb7e951acd3bf97"
+      "3": "dced5ca83c59b7ec02a23be45ad3375b885e507b"
+      "4": "30ba0412dfedfe46e8061ea063246bac59da2b69"
+      "5": "fb070707616493227c21dea15dba52b2fcab4465"
+      "6": "27164c06aa904117df15dede95fb55764e9054e7"
+      "7": "14633248c2c8cfc1af165506357416836ee1add4"
+      "8": "c2d36c561e1cb3865295658c7014e0a0d10371cc"
+      "9": "882a49cbb22c0fcc2a27e6846ff2246701bdf78f"
+      "10": "e08381c7bc85397c1661bdeaa62be996df822d6e"
+      "11": "3918929b90f7cc21052860816dcdc15636aa3373"
+      "12": "13e4df89facf9d8907f4128f64e63a516a966c9f"
+      "13": "3704cb3d6651a693c829fa03aeb04cd52bc9f4d3"
+      "14": "ad291257df0088ddbc91dc935ca07c7d40bde627"
+      "15": "2bb08edc2a4b6527f0ea140a12ce1c6e35a6eddf"
+      "16": "ec0a4f88f19fb3279a4851fe2e76ba7d5a527685"
+
+  - id: nk_rf
+    file: law/nk_rf.txt
+    title: "Налоговый кодекс Российской Федерации (статьи о штрафе за непереданный чек, упрощённой системе налогообложения и страховых взносах ИП)"
+    short: "НК РФ"
+    kind: "Кодекс"
+    structure: law
+    part: "п."
+    item: "пп."
+    edition: "действующая редакция"
+    url: "https://www.consultant.ru/document/cons_doc_LAW_28165/"
+    articles:
+      "129.13": "https://www.consultant.ru/document/cons_doc_LAW_19671/96c8b6937f62c6afc0bd07ef05603adf56952f35/"
+      "346.12": "https://www.consultant.ru/document/cons_doc_LAW_28165/a1d86f7078e645869b02fde85e8c972193557dee/"
+      "346.13": "https://www.consultant.ru/document/cons_doc_LAW_28165/d4ddf64a8dd3e5ca9a2357aabbf32bcf7abcc5f8/"
+      "346.14": "https://www.consultant.ru/document/cons_doc_LAW_28165/d85ad5bef478ae5509458bff8f86b2ea0e837902/"
+      "346.20": "https://www.consultant.ru/document/cons_doc_LAW_28165/3908f157150b10882cccfbb7f359866338098767/"
+      "346.21": "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+      "430": "https://www.consultant.ru/document/cons_doc_LAW_28165/c03008a92ccba28226abe4034e9aa43e3a2ffeb4/"
+      "432": "https://www.consultant.ru/document/cons_doc_LAW_28165/61cf20d6fef78624729113dab2aad81847aa701a/"
+
+  - id: fz456
+    file: law/fz456.txt
+    title: "Федеральный закон от 15.12.2025 № 456-ФЗ «О проведении эксперимента по добровольному вступлению отдельных категорий граждан в правоотношения по обязательному социальному страхованию на случай временной нетрудоспособности»"
+    short: "456-ФЗ"
+    kind: "Федеральный закон"
+    structure: law
+    part: "ч."
+    item: "п."
+    edition: "первоначальная редакция, действует с 01.01.2026"
+    # добавляется к тексту фрагментов для поиска: в самом законе нет слов «самозанятый» и «больничный»
+    topic: "больничный для самозанятых, добровольное страхование на случай болезни"
+    url: "http://publication.pravo.gov.ru/document/0001202512150018"
+    # Официальная публикация — скан: текст распознан (scripts/import/ocr_pdf.py), разобран на статьи
+    # (scripts/import/struct_456fz.py) и сверен со сканом вручную. fetch_laws.py этот документ не скачивает.
+    manual: true
+
+  - id: faq_npd
+    file: fns/faq_npd.txt
+    title: "ФНС России. Налог на профессиональный доход: часто задаваемые вопросы и ответы (npd.nalog.ru)"
+    short: "Разъяснения ФНС"
+    kind: "Разъяснения ФНС России"
+    structure: faq
+    url: "https://npd.nalog.ru/faq/"
+    # Ответы, которые устарели после изменения законов: в индекс не попадают (файл ФНС не правится).
+    outdated:
+      - question: "Я самозанятый, будут ли мне оплачиваться больничные листы?"
+        reason: "С 01.01.2026 действует 456-ФЗ: самозанятые могут добровольно застраховаться на случай болезни"
