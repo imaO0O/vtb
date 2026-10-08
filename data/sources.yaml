@@ -70,6 +70,17 @@ documents:
     # (scripts/import/struct_456fz.py) и сверен со сканом вручную. fetch_laws.py этот документ не скачивает.
     manual: true
 
+  - id: answers
+    file: bank/answers.txt
+    title: "Ответы специалистов банка на вопросы клиентов"
+    short: "Ответ специалиста банка"
+    kind: "Разъяснения специалистов банка"
+    structure: faq
+    basis_label: "Основание, указанное специалистом"
+    # Пополняется со страницы «Для банка»: вопрос, на который помощник не нашёл ответа, специалист разбирает
+    # и публикует ответ со ссылкой на норму (kbagent/specialists.py). fetch_laws.py его не трогает.
+    manual: true
+
   - id: faq_npd
     file: fns/faq_npd.txt
     title: "ФНС России. Налог на профессиональный доход: часто задаваемые вопросы и ответы (npd.nalog.ru)"

@@ -30,8 +30,11 @@ def build_cards(index: Index) -> dict[str, dict]:
             scope = " ".join(c.text for c in chunks if c.article == first.article)
         elif first.doc_kind.startswith("Разъяснения"):
             sections = list(dict.fromkeys(re.sub(r"\s*\(продолжение\)$", "", c.heading or "") for c in chunks))
-            scope = (f"Ответы ФНС России на частые вопросы о налоге на профессиональный доход: {len(sections)} "
-                     "вопросов — кто может стать самозанятым, регистрация, чеки, налог и вычет, ограничения режима.")
+            if doc_id == "faq_npd":
+                scope = (f"Ответы ФНС России на частые вопросы о налоге на профессиональный доход: {len(sections)} "
+                         "вопросов — кто может стать самозанятым, регистрация, чеки, налог и вычет, ограничения режима.")
+            else:
+                scope = f"{first.doc_title}: вопросов — {len(sections)}."
         else:
             sections = list(dict.fromkeys(
                 h for h in (c.heading for c in chunks)

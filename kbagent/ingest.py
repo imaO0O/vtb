@@ -468,7 +468,7 @@ def _faq_chunks(lines: list[str], meta: dict) -> list[Chunk]:
             items.append((line[len(FAQ_Q):].strip(), []))
         elif items:
             if line.startswith(FAQ_SRC):
-                line = "Основание, указанное ФНС: " + line[len(FAQ_SRC):].strip()
+                line = f"{meta.get('basis_label') or 'Основание, указанное ФНС'}: " + line[len(FAQ_SRC):].strip()
             items[-1][1].append(line)
     outdated = {re.sub(r"\s+", " ", o["question"]).strip() for o in meta.get("outdated", [])}
     for question, body in items:
@@ -497,6 +497,7 @@ def parse_document(path: Path, catalog: dict, stats: dict | None = None) -> list
         "access": access_of(info),
         "short": info.get("short"), "url": info.get("url"), "part": info.get("part", "ч."),
         "item": info.get("item", "п."), "outdated": info.get("outdated", []), "topic": info.get("topic"),
+        "basis_label": info.get("basis_label"),
     }
     if path.suffix.lower() == ".txt":
         lines = normalize(path.read_text(encoding="utf-8")).splitlines()

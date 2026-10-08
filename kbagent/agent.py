@@ -276,7 +276,7 @@ BASIS_DOCS = [(re.compile(r"422-ФЗ|27\.11\.2018|27 ноября 2018"), "fz422
 def law_basis(text: str, chunks: list) -> list[dict]:
     """Статьи закона, на которые ссылается разъяснение ФНС («Основание, указанное ФНС: ч. 2 ст. 4 …422-ФЗ»), —
     фрагменты из базы знаний, чтобы под ответом было видно и разъяснение, и норму закона."""
-    line = next((ln for ln in text.splitlines() if ln.startswith("Основание, указанное ФНС")), "")
+    line = next((ln for ln in text.splitlines() if ln.startswith("Основание, указанное")), "")
     finder, out, seen = account.Refs(chunks), [], set()
     for m in BASIS_RE.finditer(line):
         tail = line[m.end():m.end() + 160]
