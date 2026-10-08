@@ -30,7 +30,7 @@ from kbagent.agent import Agent  # noqa: E402
 from kbagent.config import settings  # noqa: E402
 
 RESULTS = ROOT / "eval" / "results"
-GROUPS = ["основной", "перефразировка", "ловушки", "диалог", "счёт"]
+GROUPS = ["основной", "перефразировка", "ловушки", "диалог", "счёт"]   # в отложенном наборе — те же группы
 DEFAULT_CLIENT = "anya"
 
 

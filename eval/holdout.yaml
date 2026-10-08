@@ -1,0 +1,189 @@
+# Отложенный набор: вопросы написаны 08.10.2026 после отладки на eval/questions.yaml и прогнаны один раз,
+# без правок агента под них. Результат публикуется как есть (eval/results/holdout.md).
+# Темы и формулировки не повторяют эталонный набор. Формат — как в eval/questions.yaml.
+
+questions:
+  # ---------- закон и разъяснения ФНС ----------
+  - id: H01
+    type: doc
+    question: Нужно ли открывать ИП, чтобы стать самозанятым?
+    must_include: ["не нужно|не обязательно|без государственной регистрации|без регистрации|не требуется|нет"]
+    source: [{doc: fz422, article: "2", part: "6"}, {doc: faq_npd}]
+  - id: H02
+    type: doc
+    question: Сколько раз даётся бонус 10 000 рублей?
+    must_include: ["единожды|один раз|однократно|1 раз"]
+    source: [{doc: faq_npd}]
+  - id: H03
+    type: doc
+    question: Можно ли самозанятому сдавать в аренду офисное помещение?
+    must_include: ["нет|нельзя|не можете|не может|не вправе|не облага"]
+    source: [{doc: fz422, article: "6", part: "2"}, {doc: faq_npd}]
+  - id: H04
+    type: doc
+    question: Может ли мама заплатить налог за меня, если я самозанятый?
+    must_include: ["иным лицом|другой человек|может|можно|вправе|да"]
+    source: [{doc: faq_npd}]
+  - id: H05
+    type: doc
+    question: Начисляют ли пени, если самозанятый опоздал с уплатой налога?
+    must_include: ["пени|пеня"]
+    source: [{doc: faq_npd}]
+  - id: H06
+    type: doc
+    question: Как пробить чек, если заказчик заплатил в долларах?
+    must_include: ["курс"]
+    source: [{doc: faq_npd}]
+  - id: H07
+    type: doc
+    question: Может ли самозанятый выставить счёт на оплату?
+    must_include: ["да|может|можно"]
+    source: [{doc: faq_npd}]
+  - id: H08
+    type: doc
+    question: Облагается ли налогом самозанятого продажа своих старых вещей на Авито?
+    must_include: ["не облага|не признает|не признаю|не является|не подлеж|не нужно|не надо|нет|не учитыва"]
+    source: [{doc: fz422, article: "6", part: "2"}, {doc: fz422, article: "4", part: "2"}, {doc: faq_npd}]
+  - id: H09
+    type: doc
+    question: Можно ли указать несколько видов деятельности как самозанятый?
+    must_include: ["да|может|можно|вправе"]
+    source: [{doc: faq_npd}]
+  - id: H10
+    type: doc
+    question: Где считается место ведения деятельности, если я работаю удалённо через интернет?
+    must_include: ["по выбору|выбрать|выбор"]
+    source: [{doc: fz422, article: "2"}, {doc: faq_npd}]
+  - id: H11
+    type: doc
+    question: Может ли компания учесть в расходах оплату самозанятому без чека?
+    must_include: ["не учитыва|нельзя|не может|нет|не вправе"]
+    source: [{doc: fz422, article: "15", part: "8"}, {doc: faq_npd}]
+  - id: H12
+    type: doc
+    question: С какого дня человек становится самозанятым после подачи заявления?
+    must_include: ["направлени|подачи|подал|отправ"]
+    source: [{doc: fz422, article: "5", part: "10"}, {doc: faq_npd}]
+  - id: H13
+    type: doc
+    question: Можно ли снова стать самозанятым после снятия с учёта?
+    must_include: ["задолж|неисполненн|долг|недоимк"]
+    source: [{doc: fz422, article: "5", part: "11"}, {doc: faq_npd}]
+  - id: H14
+    type: doc
+    question: Какой средний заработок берут для больничного самозанятого, если он платит взносы больше года?
+    must_include: ["100"]
+    source: [{doc: fz456, article: "6", part: "8"}]
+  - id: H15
+    type: doc
+    question: Нужно ли платить взносы на больничный за время, пока самозанятый болеет?
+    must_include: ["вправе не уплачивать|можно не платить|не уплачивать|не платить|не обязан"]
+    source: [{doc: fz456, article: "5", part: "10"}]
+  - id: H16
+    type: doc
+    question: Что будет, если самозанятый не заплатил взнос на больничный за месяц?
+    must_include: ["прекра"]
+    source: [{doc: fz456, article: "5", part: "16"}, {doc: fz456, article: "7"}]
+  - id: H17
+    type: doc
+    question: Через сколько месяцев без больничных уменьшается взнос на добровольное страхование?
+    must_include: ["восемнадцат|18"]
+    source: [{doc: fz456, article: "5", part: "12"}]
+  - id: H18
+    type: doc
+    question: Может ли госслужащий быть самозанятым?
+    must_include: ["жил|аренд"]
+    source: [{doc: fz422, article: "6", part: "2"}, {doc: faq_npd}]
+  - id: H19
+    type: doc
+    question: Какой налог у самозанятого, если работу оплачивает ИП?
+    must_include: ["6"]
+    source: [{doc: fz422, article: "10"}, {doc: faq_npd}]
+  - id: H20
+    type: doc
+    question: Платит ли ИП на НПД налог на добавленную стоимость?
+    must_include: ["не признаются|не платят|не нужно|нет|не являются|не уплачива|освобожд"]
+    source: [{doc: fz422, article: "2", part: "9"}, {doc: faq_npd}]
+  - id: H21
+    type: doc
+    question: Можно ли быть самозанятым курьером и принимать деньги за чужие товары?
+    must_include: ["контрольно-кассов|ккт|касс"]
+    source: [{doc: fz422, article: "4", part: "2"}, {doc: faq_npd}]
+  - id: H22
+    type: doc
+    question: Какой налоговый период для упрощёнки — правда, что ИП отчитывается раз в год?
+    must_include: ["год"]
+    source: [{doc: nk_rf}]
+  - id: H23
+    type: doc
+    question: Я пенсионер, могу ли я стать самозанятым?
+    must_include: ["да|может|можете|вправе"]
+    source: [{doc: faq_npd}]
+
+  # ---------- ответа в базе знаний нет ----------
+  - id: HN1
+    type: none
+    question: Какой налог на имущество платит самозанятый за квартиру?
+  - id: HN2
+    type: none
+    question: Сколько стоит онлайн-касса для ИП?
+  - id: HN3
+    type: none
+    question: Какая будет пенсия у самозанятого через 30 лет?
+  - id: HN4
+    type: none
+    question: Дадут ли самозанятому кредит на бизнес под 5 процентов?
+  - id: HN5
+    type: none
+    question: Какие льготы на аренду есть у самозанятых в Москве?
+  - id: HN6
+    type: none
+    question: Как оформить статус многодетной семьи?
+
+  # ---------- счёт клиента ----------
+  - id: HA1
+    group: счёт
+    type: account
+    client: anya
+    question: Сколько налога я заплачу за прошлый месяц?
+    must_include: ["795"]
+  - id: HA2
+    group: счёт
+    type: account
+    client: max
+    question: Покажи мои поступления без чека
+    must_include: ["15 000"]
+  - id: HA3
+    group: счёт
+    type: account
+    client: max
+    question: Сколько я заработал с начала года?
+    must_include: ["2 250 000"]
+  - id: HA4
+    group: счёт
+    type: account
+    client: anya
+    question: Стоит ли мне открывать ИП?
+    must_include: ["57 390"]
+  - id: HA5
+    group: счёт
+    type: account
+    client: max
+    question: Хватит ли мне лимита до конца года, если я заработаю ещё 200 тысяч?
+    must_include: ["150 000"]
+
+  # ---------- диалог ----------
+  - id: HD1
+    group: диалог
+    type: doc
+    history: ["Какой лимит дохода у самозанятого?"]
+    question: А что будет, если его превысить?
+    must_include: ["утрач|теря|не вправе|снят"]
+    source: [{doc: fz422, article: "5"}, {doc: fz422, article: "4", part: "2"}, {doc: faq_npd}]
+  - id: HD2
+    group: диалог
+    type: doc
+    history: ["Может ли самозанятый получать больничный?"]
+    question: А какой тариф взносов?
+    must_include: ["3,84"]
+    source: [{doc: fz456, article: "5", part: "7"}]
