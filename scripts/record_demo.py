@@ -23,6 +23,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 SCREENS = ROOT / "docs" / "screens"
 VIDEO = ROOT / "docs" / "demo"
+MAX_SECONDS = 118                # конкурс просит видео на 1–2 минуты
 
 CAPTION_JS = """text => {
   let el = document.getElementById('demo-caption');
@@ -125,61 +126,86 @@ def run(url: str, pause: float, headless: bool) -> Path:
         cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 88, "maxWidth": 1280, "maxHeight": 720})
 
         d.scroll_top()
-        d.caption("«Первый чек» — ИИ-помощник для начинающих самозанятых в приложении банка", 4)
+        d.caption("«Первый чек» — ИИ-помощник для начинающих самозанятых в приложении банка", 3.5)
         d.shot("01_glavnyy_ekran")
-        d.caption("Путь клиента: первый доход → самозанятый → близко к лимиту → ИП и расчётный счёт", 4)
         d.scroll_by(330)
-        d.caption("Аня, 19 лет, третий месяц самозанятая. Банк видит её поступления и сам подсказывает, "
-                  "что требует внимания", 5)
+        d.caption("Аня, 19 лет, самозанятая. Банк видит её поступления и сам подсказывает, что требует внимания", 4)
         d.shot("01b_podskazki")
 
         d.click(page.get_by_role("button", name=re.compile("Подробнее")).first)
         d.scroll_bottom()
-        d.caption("Кофейня, где Аня работала, заплатила ей за дизайн меню. Такой доход не облагается НПД — "
-                  "со ссылкой на ч. 2 ст. 6 422-ФЗ", 5)
+        d.caption("Бывший работодатель заплатил ей за дизайн — такой доход не облагается НПД: ч. 2 ст. 6 422-ФЗ", 4.5)
         d.shot("02_byvshiy_rabotodatel")
-
         d.click(page.locator("button", has_text="422-ФЗ, ст. 6").last)
-        page.wait_for_timeout(800)
-        d.caption("Нажатие на источник — текст статьи закона и ссылка на оригинал", 4)
+        page.wait_for_timeout(700)
+        d.caption("Каждая ссылка открывает текст закона", 2.5)
         d.shot("03_istochnik")
         page.keyboard.press("Escape")
-        page.wait_for_timeout(600)
+        page.wait_for_timeout(500)
 
-        d.caption("Вопрос разговорным языком…", 1.5)
         d.ask("можно на самозанятости перекупать кроссовки и продавать дороже?")
         d.scroll_bottom()
-        d.caption("…ответ простыми словами — со ссылкой на закон и разъяснения ФНС", 5)
+        d.caption("Вопрос разговорным языком — ответ простыми словами со ссылками на закон", 4)
         d.shot("04_otvet_po_zakonu")
 
         d.ask("Сколько стоит патент для ИП в Москве?")
         d.scroll_bottom()
-        d.caption("Этого в законе нет — помощник честно отказывается и не выдумывает", 4)
+        d.caption("Этого в законе нет — честный отказ. Вопрос можно передать специалисту банка", 3.5)
+        d.click(page.get_by_role("button", name=re.compile("Передать вопрос специалисту")).last)
+        d.scroll_bottom()
         d.shot("05_chestnyy_otkaz")
+
+        page.get_by_text("Чеки и сроки", exact=True).first.click()
+        d.idle()
+        d.caption("Не только совет, но и действие: «Спасибо!» от Кирилла — это оплата за работу?", 4)
+        d.click(page.get_by_role("button", name=re.compile("Оплата за работу")).first)
+        d.caption("Черновик чека по реквизитам ч. 6 ст. 14 — сформировать через банк в одно нажатие", 4)
+        d.shot("11_cheki")
+        d.click(page.get_by_role("button", name=re.compile("Сформировать чек через банк")).first)
+        d.scroll_by(900)
+        d.caption("Календарь: срок чека, уведомление ФНС до 12-го, налог до 28-го, автоплатёж через банк", 4)
+        d.shot("12_sroki")
 
         page.locator('[data-testid="stSelectbox"]').first.click()
         page.get_by_role("option", name=re.compile("Максим")).click()
         d.idle()
+        page.get_by_text("Помощник", exact=True).first.click()
+        d.idle()
         d.scroll_top()
-        d.caption("Максим, 24 года, фотограф: 2,25 млн ₽ с начала года — до лимита 150 000 ₽", 5)
+        d.scroll_by(330)
+        d.caption("Максим: 2,25 млн ₽ с начала года. При нынешнем темпе лимит закончится около 27 октября", 4.5)
         d.shot("06_maksim_u_limita")
-
+        d.scroll_top()
         d.click(page.get_by_role("button", name=re.compile("Следующий шаг")))
         d.scroll_bottom()
-        d.caption("Самозанятость или ИП — расчёт на доходе клиента, со ссылками на НК РФ", 6)
+        d.caption("Самозанятость или ИП — расчёт на его доходе по НК РФ, и предложение открыть ИП и счёт заранее", 5)
         d.shot("07_ip_ili_samozanyatost")
 
-        d.ask("Хватит ли мне лимита, если до конца года придёт ещё 200 тысяч?")
-        d.scroll_bottom()
-        d.caption("Прогноз по лимиту — и предложение банка открыть ИП и расчётный счёт заранее", 6)
-        d.shot("08_prognoz_limita")
+        page.locator('[data-testid="stSelectbox"]').first.click()
+        page.get_by_role("option", name=re.compile("Лиза")).click()
+        d.idle()
+        page.get_by_text("Подходит ли мне НПД", exact=True).first.click()
+        d.idle()
+        d.caption("Лиза пока не самозанятая. Проверка «подходит ли мне» — по правилам закона, без нейросети", 3.5)
+        d.click(page.get_by_role("button", name=re.compile("Проверить$")))
+        d.scroll_by(700)
+        d.caption("Вывод со ссылками на пункты 422-ФЗ — и постановка на учёт через банк", 4)
+        d.shot("13_podhodit")
 
         page.get_by_text("Для банка", exact=True).first.click()
         d.idle()
-        d.caption("Для банка: о чём спрашивают клиенты, кому предложить ИП и РКО, темы без ответа, качество", 6)
-        d.shot("09_dlya_banka")
-        d.caption("GigaChat 3.1 Lightning внутри контура банка · ответ ~1 с · 61 из 63 ответов по закону верны "
-                  "и со ссылкой", 5)
+        page.get_by_role("tab", name="Лиды").click()
+        page.wait_for_timeout(800)
+        d.caption("Для банка — лиды: кому предложить ИП и РКО, чеки и автоплатёж через банк, постановку на учёт", 4.5)
+        d.shot("14_lidy")
+        page.get_by_role("tab", name="Вопросы специалисту").click()
+        page.wait_for_timeout(800)
+        d.caption("Ответ специалиста публикуется в базу знаний — дальше помощник отвечает сам", 4)
+        d.shot("15_specialist")
+        page.get_by_role("tab", name="Экономика").click()
+        page.wait_for_timeout(800)
+        d.shot("16_ekonomika")
+        d.caption("GigaChat 3.1 Lightning внутри контура банка · ответ ~1 с · 61 из 63 ответов по закону верны", 4)
         cdp.send("Page.stopScreencast")
         context.close()
 
@@ -202,12 +228,14 @@ def to_mp4(frames: list[tuple[float, bytes]], target: Path) -> Path:
     """Кадры screencast приходят, только когда страница меняется: каждый держится до следующего."""
     import imageio_ffmpeg
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    total = frames[-1][0] - frames[0][0] + 2.0
+    speed = max(1.0, total / MAX_SECONDS)       # длиннее двух минут — равномерно ускоряем
     with tempfile.TemporaryDirectory() as tmp:
         lines = []
         for k, (t, data) in enumerate(frames):
             name = Path(tmp) / f"f{k:05d}.jpg"
             name.write_bytes(data)
-            duration = (frames[k + 1][0] - t) if k + 1 < len(frames) else 2.0
+            duration = ((frames[k + 1][0] - t) if k + 1 < len(frames) else 2.0) / speed
             lines += [f"file '{name.as_posix()}'", f"duration {max(duration, 0.04):.3f}"]
         lines.append(f"file '{(Path(tmp) / f'f{len(frames) - 1:05d}.jpg').as_posix()}'")
         concat = Path(tmp) / "frames.txt"
