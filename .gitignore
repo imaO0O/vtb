@@ -1,0 +1,15 @@
+# модели и сборки llama.cpp ставятся отдельно (scripts/setup.py)
+models/
+tools/
+*.gguf
+
+# производные данные: индекс собирается за секунды (scripts/build_index.py)
+data/index/
+logs/
+eval/results/*.jsonl
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.streamlit/secrets.toml
