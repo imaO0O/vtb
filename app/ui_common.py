@@ -50,6 +50,7 @@ CSS = """
 [data-testid="stCaptionContainer"] { color: #4A5675; }
 /* телефон: без аватаров — ответу вся ширина экрана */
 @media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"] { padding-top: 3.5rem; }
   [data-testid^="stChatMessageAvatar"] { display: none; }
   [data-testid="stChatMessage"] { gap: 0; padding-left: .2rem; padding-right: .2rem; }
 }
@@ -73,9 +74,10 @@ def clients(day: str) -> dict:
 
 
 def client_state(cid: str) -> dict:
-    """Что клиент сделал в этой сессии: подтвердил тип поступлений, сформировал чеки, включил автоплатёж."""
+    """Что клиент сделал в этой сессии: подтвердил тип поступлений, сформировал чеки, включил автоплатёж;
+    arrived — какие демо-переводы уже «пришли» на карту."""
     return st.session_state.setdefault("client_state", {}).setdefault(
-        cid, {"kinds": {}, "receipts": set(), "autopay": None})
+        cid, {"kinds": {}, "receipts": set(), "autopay": None, "arrived": []})
 
 
 def current_client() -> "account.Client | None":
@@ -85,7 +87,9 @@ def current_client() -> "account.Client | None":
     if base is None:
         return None
     state = client_state(cid)
-    c = account.apply_overrides(base, state["kinds"], state["receipts"])
+    now = account.today()
+    arrived = [account.make_operation(base.incoming[k], now, base.is_npd) for k in state["arrived"]]
+    c = account.apply_overrides(account.with_operations(base, arrived), state["kinds"], state["receipts"])
     if state["autopay"] is not None:
         c.autopay = state["autopay"]
     return c

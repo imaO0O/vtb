@@ -3,7 +3,8 @@
     python scripts/run_chat.py        (или scripts\\run_chat.bat)
 
 В банковском приложении клиент уже вошёл в систему, поэтому в прототипе вместо входа — выбор демо-клиента
-(data/demo/clients.yaml) и его согласие на анализ поступлений. Страницы: «Помощник» (app/ui_chat.py),
+(data/demo/clients.yaml) и его согласие на анализ поступлений; кнопки «Пришёл перевод» показывают уведомление,
+которое помощник присылает в момент поступления (app/ui_push.py). Страницы: «Помощник» (app/ui_chat.py),
 «Чеки и сроки» (app/ui_tools.py), «Подходит ли мне самозанятость» (app/ui_check.py) и «Для банка»
 (app/ui_bank.py) — лиды, экономика, вопросы специалисту, журнал, темы без ответа, качество.
 """
@@ -18,7 +19,8 @@ sys.path.insert(0, str(ROOT))
 from app.ui_bank import bank_page  # noqa: E402
 from app.ui_chat import chat_page  # noqa: E402
 from app.ui_check import check_page  # noqa: E402
-from app.ui_common import APP_NAME, LOGO, clients, inject_css  # noqa: E402
+from app.ui_common import APP_NAME, LOGO, clients, consent, current_client, inject_css  # noqa: E402
+from app.ui_push import incoming_panel, show_push  # noqa: E402
 from app.ui_tools import tools_page  # noqa: E402
 from kbagent import account  # noqa: E402
 
@@ -41,6 +43,8 @@ with st.sidebar:
         st.toggle("Помощник учитывает мои поступления", key="consent", value=True,
                   help="Согласие на анализ операций по счёту: суммы поступлений, плательщики и назначения платежей. "
                        "Без него помощник отвечает только по закону. Данные не покидают банк.")
+        if consent():
+            incoming_panel(current_client())
 
 pages = {
     "chat": st.Page(chat_page, title="Помощник", icon=":material/forum:", default=True),
@@ -49,4 +53,6 @@ pages = {
     "bank": st.Page(bank_page, title="Для банка", icon=":material/insights:", url_path="bank"),
 }
 st.session_state["pages"] = pages
-st.navigation(list(pages.values()), position="sidebar").run()
+page = st.navigation(list(pages.values()), position="sidebar")
+show_push()
+page.run()

@@ -22,6 +22,11 @@ def test_transfers_are_classified_or_asked():
     assert A.classify("Оплата по договору", "ООО «Ромашка»", "company")[0] == "work"
     assert A.classify("На телефон", "Папа", "person")[0] == "personal"
     assert A.classify("Спасибо!", "Кирилл Н.", "person")[0] == "unknown"     # не гадаем — спрашиваем клиента
+    # зарплата от работодателя — не доход самозанятого: ни чека, ни налога
+    assert A.classify("Заработная плата за сентябрь", "ООО «Ромашка»", "company")[0] == "salary"
+    assert A.classify("Аванс за сентябрь", "АО «Завод»", "company")[0] == "salary"
+    assert A.classify("Аванс по договору: съёмка", "АО «Завод»", "company")[0] == "work"     # предоплата за работу
+    assert A.classify("Оплата по договору: дизайн", "ООО «Ромашка»", "company")[0] == "work"
 
 
 def test_client_confirmation_changes_income_and_receipts(clients):

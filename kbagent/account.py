@@ -16,7 +16,7 @@
 import calendar
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 import yaml
@@ -60,6 +60,7 @@ RULES = {
     "receipt_fields": ("fz422", "14", "6", None),
     "bank_partner": ("fz422", "3", "3", None),
     "autopay": ("fz422", "11", "4", None),
+    "over_limit": ("faq_npd", None, None, None, "только на часть полученного дохода"),
 }
 
 # ИП на УСН «доходы» без работников (НК РФ): ставка 6 % (п. 1 ст. 346.20, регион может снизить), налог уменьшается
@@ -110,6 +111,7 @@ class Client:
     inn: str = ""
     consent: bool = True         # согласие на анализ поступлений помощником (для банковских лидов)
     autopay: bool = False        # банк уполномочен платить налог (ч. 4 ст. 11 422-ФЗ)
+    incoming: list[dict] = field(default_factory=list)   # демо: переводы, которые «придут» во время показа
 
     @property
     def is_npd(self) -> bool:
@@ -124,6 +126,11 @@ class Client:
 WORK_RE = re.compile(r"урок|заняти|заказ|договор|оплат|услуг|портрет|съ[её]мк|фото|дизайн|макет|логотип|иллюстрац|"
                      r"стикер|работ|консультац|ремонт|репетит|сайт|монтаж|маникюр|стрижк|тренировк|обложк|меню|"
                      r"английск|предоплат", re.I)
+# зарплата и выплаты работодателя — не доход самозанятого: ни налога, ни чека. «Аванс по договору» — это
+# предоплата самозанятому, поэтому аванс — только по зарплате или «за месяц»
+SALARY_RE = re.compile(r"заработн\w* плат|зарплат|отпускн|больничн|пособи|расч[её]т\w* при увольнении|"
+                       r"окончательн\w* расч[её]т|компенсаци\w* за отпуск|аванс\w* (?:по з|за (?:январ|феврал|март|"
+                       r"апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр))", re.I)
 PERSONAL_RE = re.compile(r"\bмам|\bпап|бабушк|дедушк|сестр|брат|на обед|на проезд|на телефон|подарок|день рождени|"
                          r"\bс др\b|долг|верну|займ|карманн|на кино", re.I)
 
@@ -131,6 +138,8 @@ PERSONAL_RE = re.compile(r"\bмам|\bпап|бабушк|дедушк|сест�
 def classify(purpose: str, payer: str, payer_kind: str) -> tuple[str, str]:
     """Тип поступления по назначению и плательщику: work, personal или unknown — и причина."""
     text = f"{payer} {purpose}"
+    if payer_kind == "company" and SALARY_RE.search(purpose):
+        return "salary", "в назначении — зарплата или выплата работодателя"
     if PERSONAL_RE.search(text):
         return "personal", "по назначению похоже на личный перевод"
     if payer_kind == "company":
@@ -154,8 +163,23 @@ def apply_overrides(c: Client, kinds: dict | None = None, receipts: set | None =
         reason = "подтверждено клиентом" if o.key in kinds else o.reason
         ops.append(Operation(o.day, o.amount, o.payer, o.payer_kind, o.channel, kind, o.purpose, receipt, o.inn,
                              reason))
-    return Client(c.id, c.name, c.age, c.about, c.npd_since, c.deduction_used, ops, c.former_employers, c.full_name,
-                  c.inn, c.consent, c.autopay)
+    return replace(c, operations=ops)
+
+
+def make_operation(o: dict, day: date, npd: bool) -> Operation:
+    """Поступление из данных банка. Тип задан (зарплата, подтверждённый клиентом) — иначе его определяет банк по
+    назначению; по оплате за работу у самозанятого чек считается не сформированным, пока клиент его не сформирует."""
+    kind, reason = (o["kind"], "") if o.get("kind") else classify(o["purpose"], o["payer"], o["payer_kind"])
+    receipt = o.get("receipt", False if kind == "work" and npd else None)
+    return Operation(day, float(o["amount"]), o["payer"], o["payer_kind"], o["channel"], kind, o["purpose"], receipt,
+                     o.get("inn"), reason)
+
+
+def with_operations(c: Client, extra: list[Operation]) -> Client:
+    """Клиент с новыми поступлениями — в прототипе это переводы, которые «приходят» во время показа."""
+    if not extra:
+        return c
+    return replace(c, operations=sorted(c.operations + extra, key=lambda o: o.day))
 
 
 def unconfirmed(c: Client, now: date | None = None) -> list[Operation]:
@@ -212,13 +236,8 @@ def load_clients(now: date | None = None) -> dict[str, Client]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))["clients"]
     clients = {}
     for c in data:
-        ops = []
-        for o in c["operations"]:
-            # тип задан в данных (зарплата, подтверждённый клиентом) — иначе его определяет банк по назначению
-            kind, reason = (o["kind"], "") if o.get("kind") else classify(o["purpose"], o["payer"], o["payer_kind"])
-            receipt = o.get("receipt", False if kind == "work" and c.get("npd_since_months") is not None else None)
-            ops.append(Operation(_day(now, o["m"], o["d"]), float(o["amount"]), o["payer"], o["payer_kind"],
-                                 o["channel"], kind, o["purpose"], receipt, o.get("inn"), reason))
+        npd = c.get("npd_since_months") is not None
+        ops = [make_operation(o, _day(now, o["m"], o["d"]), npd) for o in c["operations"]]
         if c.get("year_work_total"):
             ops += _fill_year(ops, float(c["year_work_total"]), now)
         ops.sort(key=lambda o: o.day)
@@ -226,7 +245,7 @@ def load_clients(now: date | None = None) -> dict[str, Client]:
         clients[c["id"]] = Client(c["id"], c["name"], c["age"], c["about"],
                                   _day(now, since, 1) if since is not None else None, float(c.get("deduction_used", 0)),
                                   ops, c.get("former_employers", []), c.get("full_name", ""), c.get("inn", ""),
-                                  c.get("consent", True), c.get("autopay", False))
+                                  c.get("consent", True), c.get("autopay", False), c.get("incoming", []))
     return clients
 
 
@@ -245,11 +264,45 @@ def former_employer_income(c: Client) -> list[tuple[Operation, date]]:
     return out
 
 
-def npd_operations(c: Client, now: date) -> list[Operation]:
+def _work_income(c: Client, now: date) -> list[Operation]:
     """Поступления за работу после постановки на учёт, кроме оплаты от бывшего работодателя."""
     excluded = {id(o) for o, _ in former_employer_income(c)}
     return [o for o in c.operations if o.work and id(o) not in excluded and c.npd_since and o.day >= c.npd_since
             and o.day <= now]
+
+
+def crossing(c: Client, now: date) -> Operation | None:
+    """Поступление, с которым доход с начала года превысил лимит 2,4 млн ₽. Право на налог для самозанятых
+    утрачено со дня превышения (ч. 19 ст. 5, п. 8 ч. 2 ст. 4 422-ФЗ), а со всей суммы этого поступления
+    отчитываются по другой системе налогообложения — чек на часть суммы не формируется (разъяснение ФНС)."""
+    total = 0.0
+    for o in _work_income(c, now):
+        if o.day.year == now.year:
+            total += o.amount
+            if total > LIMIT:
+                return o
+    return None
+
+
+def over_limit(c: Client, now: date) -> list[Operation]:
+    """Поступления за работу с дня превышения лимита — уже не доход самозанятого."""
+    x = crossing(c, now)
+    if x is None:
+        return []
+    ops = [o for o in _work_income(c, now) if o.day.year == now.year]
+    return ops[next(k for k, o in enumerate(ops) if o is x):]
+
+
+def npd_operations(c: Client, now: date) -> list[Operation]:
+    """Доход самозанятого: поступления за работу после постановки на учёт, кроме оплаты от бывшего работодателя
+    и поступлений с дня превышения лимита."""
+    after = {id(o) for o in over_limit(c, now)}
+    return [o for o in _work_income(c, now) if id(o) not in after]
+
+
+def gross_income(c: Client, now: date) -> float:
+    """Вся оплата за работу с начала года — вместе с поступлениями после превышения лимита."""
+    return sum(o.amount for o in _work_income(c, now) if o.day.year == now.year)
 
 
 def year_income(c: Client, now: date) -> tuple[float, float, int]:
@@ -514,8 +567,29 @@ def regimes(c: Client, now: date) -> Regimes:
                    round(max(usn_tax - contributions, 0), 2), by_kind)
 
 
+def _exceeded(c: Client, ref: Refs, now: date, x: Operation) -> str:
+    """Лимит уже превышен: что это значит по закону и разъяснению ФНС."""
+    return (f"С начала {now.year} года вам пришло {money(gross_income(c, now))} оплаты за работу. Лимит для "
+            f"самозанятых — 2,4 млн ₽ за календарный год {ref('limit')} — превышен {ddmm(x.day)}: поступление "
+            f"{money(x.amount)} — {x.payer}.\n\nПраво применять налог на профессиональный доход утрачено со дня "
+            f"превышения {ref('lose_right')}. Со всей суммы этого поступления отчитываются по другой системе "
+            f"налогообложения — чек на него (и даже на часть суммы) в «Мой налог» не формируется {ref('over_limit')}. "
+            "Есть 20 календарных дней, чтобы перейти на упрощённую систему налогообложения: ИП — со дня снятия "
+            f"с учёта, а если вы не ИП — нужно за эти 20 дней зарегистрироваться как ИП {ref('to_usn')}.")
+
+
 def _compare(c: Client, ref: Refs, now: date) -> AccountAnswer:
     r = regimes(c, now)
+    x = crossing(c, now) if c.is_npd else None
+    if x is not None:
+        # самозанятость уже закончилась — сравнивать не с чем, считаем, сколько будет стоить ИП
+        return AccountAnswer(
+            _exceeded(c, ref, now, x) + "\n\n"
+            f"**ИП на упрощёнке «доходы»** на вашем доходе {money(r.income)}: налог 6 % — {money(r.usn_tax)} "
+            f"{ref('usn_rate')}, взносы за себя за полный год — {money(r.contributions)} {ref('ip_contrib')}; "
+            f"налог уменьшается на всю сумму взносов {ref('usn_reduce')}, поэтому всего с взносами — "
+            f"**{money(r.ip_total)}**.\n\n_Предложение банка:_ открыть ИП и расчётный счёт с эквайрингом можно в "
+            "приложении — помощник подскажет шаги, чтобы успеть в 20 дней.", [])
     if not r.income:
         return AccountAnswer("Поступлений за работу в этом году пока нет — сравнивать не на чем. Ставки самозанятого — "
                              f"4 % и 6 % {ref('rates')}, у ИП на упрощёнке — 6 % с дохода {ref('usn_rate')} и "
@@ -556,6 +630,8 @@ def _compare(c: Client, ref: Refs, now: date) -> AccountAnswer:
 
 def _forecast(c: Client, ref: Refs, now: date, extra: float) -> AccountAnswer:
     """«Хватит ли мне лимита, если заработаю ещё 200 тысяч?» — доход с начала года плюс плановая сумма."""
+    if crossing(c, now) is not None:
+        return _limit(c, ref, now)
     total, _, _ = year_income(c, now)
     after = total + extra
     lines = [f"С начала {now.year} года вам пришло {money(total)} оплаты за работу. Вместе с ещё {money(extra)} "
@@ -579,7 +655,7 @@ def stage(c: Client, now: date | None = None) -> int:
     if not c.is_npd:
         return 0
     total, _, _ = year_income(c, now)
-    return 2 if total >= WARN_SHARE * LIMIT else 1
+    return 2 if total >= WARN_SHARE * LIMIT or crossing(c, now) else 1
 
 
 NEXT_STEP = {0: ("Как стать самозанятым и сколько платить?", "Как зарегистрироваться самозанятым?"),
@@ -588,6 +664,11 @@ NEXT_STEP = {0: ("Как стать самозанятым и сколько п�
 
 
 def _limit(c: Client, ref: Refs, now: date) -> AccountAnswer:
+    x = crossing(c, now)
+    if x is not None:
+        return AccountAnswer(_exceeded(c, ref, now, x) + "\n\n_Предложение банка:_ открыть ИП и расчётный счёт "
+                             "можно в приложении. Сколько вы будете платить как ИП, покажет вопрос «Что мне выгоднее: "
+                             "ИП или самозанятость?».", [])
     total, with_receipts, n = year_income(c, now)
     left, share = LIMIT - total, total / LIMIT
     lines = [f"С начала {now.year} года вам пришло {money(total)} оплаты за работу ({plural(n, 'поступление', 'поступления', 'поступлений')}), "
@@ -732,7 +813,13 @@ def warnings(c: Client, now: date | None = None) -> list[dict]:
                             f"{money(sum(o.amount for o in missing))}. Штраф — 20 % от суммы.",
                     "ask": "По каким поступлениям у меня нет чека?"})
     total, _, _ = year_income(c, now)
-    if total >= WARN_SHARE * LIMIT:
+    x = crossing(c, now)
+    if x is not None:
+        out.append({"level": "error", "title": "Доход превысил лимит 2,4 млн ₽",
+                    "text": f"{ddmm(x.day)}: {money(x.amount)} — {x.payer}. С этого дня право на налог для самозанятых "
+                            "утрачено; чек на эту оплату не формируется, есть 20 дней на переход на упрощёнку.",
+                    "ask": "Сколько мне осталось до лимита?"})
+    elif total >= WARN_SHARE * LIMIT:
         _, reach = limit_pace(c, now)
         out.append({"level": "warning", "title": "Доход близко к лимиту 2,4 млн ₽",
                     "text": f"С начала года {money(total)}, осталось {money(max(LIMIT - total, 0))}."
@@ -817,6 +904,9 @@ def receipt_draft(c: Client, o: Operation, now: date | None = None) -> dict:
                         "доход, чек по нему не формируется.")
     if not c.is_npd:
         problems.append("Вы пока не стоите на учёте как самозанятый — сначала нужно встать на учёт.")
+    if any(x is o for x in over_limit(c, now)):
+        problems.append("С этой оплатой доход превысил лимит 2,4 млн ₽: со всей её суммы отчитываются по другой "
+                        "системе налогообложения, чек в «Мой налог» не формируется.")
     if o.payer_kind == "company" and not o.inn:
         problems.append("Покупатель — организация или ИП: в чеке нужен его ИНН. Попросите его у заказчика.")
     fields = [
@@ -840,10 +930,13 @@ def limit_pace(c: Client, now: date | None = None) -> tuple[float, date | None]:
     """Средний доход за день с начала года (или с постановки на учёт) и дата, когда при таком темпе доход
     дойдёт до лимита 2,4 млн ₽, — если это случится в этом году."""
     now = now or today()
-    total, _, _ = year_income(c, now)
+    x = crossing(c, now)
+    total = gross_income(c, now) if x else year_income(c, now)[0]
     start = max(date(now.year, 1, 1), c.npd_since or date(now.year, 1, 1))
     days = max((now - start).days + 1, 1)
     per_day = total / days
+    if x is not None:
+        return per_day, x.day
     if per_day <= 0 or total >= LIMIT:
         return per_day, (now if total >= LIMIT else None)
     reach = now + timedelta(days=int((LIMIT - total) / per_day) + 1)
@@ -857,7 +950,7 @@ def calendar_events(c: Client, now: date | None = None) -> list[dict]:
     events = []
     for o in unconfirmed(c, now):
         events.append({"date": now, "level": "info", "title": "Уточните поступление",
-                       "text": f"{ddmm(o.day)}: {money(o.amount)} от {o.payer} («{o.purpose}») — это оплата за работу "
+                       "text": f"{ddmm(o.day)}: {money(o.amount)} — {o.payer} («{o.purpose}»). Это оплата за работу "
                                "или личный перевод?", "rule": None, "ask": None})
     if not c.is_npd:
         return events
@@ -890,7 +983,13 @@ def calendar_events(c: Client, now: date | None = None) -> list[dict]:
                                f"28 {MONTHS_GEN[nm - 1]}", "rule": "pay_until", "ask": "Сколько налога мне платить?"})
     total, _, _ = year_income(c, now)
     _, reach = limit_pace(c, now)
-    if total >= WARN_SHARE * LIMIT or reach:
+    x = crossing(c, now)
+    if x is not None:
+        events.append({"date": x.day, "level": "error", "title": "Лимит 2,4 млн ₽ превышен",
+                       "text": f"{money(x.amount)} — {x.payer}: право на налог для самозанятых утрачено; 20 календарных "
+                               "дней на переход на упрощёнку", "rule": "to_usn",
+                       "ask": "Что мне выгоднее: ИП или самозанятость?"})
+    elif total >= WARN_SHARE * LIMIT or reach:
         text = f"С начала года {money(total)}, до лимита {money(max(LIMIT - total, 0))}"
         if reach:
             text += f"; при нынешнем темпе лимит закончится около {ddmm(reach)}"
@@ -950,13 +1049,99 @@ def leads(clients: dict, now: date | None = None) -> list[dict]:
                         "signal": "налог платит вручную", "priority": 3})
         total, _, _ = year_income(c, now)
         _, reach = limit_pace(c, now)
-        if total >= WARN_SHARE * LIMIT or (reach and (reach - now).days <= 90):
+        x = crossing(c, now)
+        if x is not None:
+            out.append({"client": c.name, "stage": STAGES[stage(c, now)], "product": PRODUCTS["ip"],
+                        "signal": f"лимит превышен {ddmm(x.day)} — 20 дней на переход в ИП", "priority": 1})
+        elif total >= WARN_SHARE * LIMIT or (reach and (reach - now).days <= 90):
             signal = f"до лимита {money(max(LIMIT - total, 0))}"
             if reach:
                 signal += f", при нынешнем темпе — около {ddmm(reach)}"
             out.append({"client": c.name, "stage": STAGES[stage(c, now)], "product": PRODUCTS["ip"], "signal": signal,
                         "priority": 1})
     return sorted(out, key=lambda x: x["priority"])
+
+
+# ---------- уведомление в момент поступления ----------
+
+def _op_tax(c: Client, key: str, now: date) -> tuple[float, float]:
+    """Налог с одного поступления как с оплаты за работу: без бонуса и с бонусом (разница налога за месяц
+    с этим поступлением и без него — бонус и перенос мелких сумм учтены так же, как в расчёте за месяц)."""
+    o = next(x for x in c.operations if x.key == key)
+    as_work = apply_overrides(c, {key: "work"})
+    without = replace(c, operations=[x for x in c.operations if x.key != key])
+    with_it = month_tax(as_work, o.day.year, o.day.month, now)
+    base = month_tax(without, o.day.year, o.day.month, now)
+    return round(with_it.tax - base.tax, 2), round(with_it.payable - base.payable, 2)
+
+
+def notify(c: Client, key: str, chunks: list[Chunk], now: date | None = None) -> dict | None:
+    """Уведомление в момент поступления: что это за перевод по закону и что сделать сейчас. Банк узнаёт
+    о поступлении первым — поэтому может предложить чек, пока не прошёл срок «в момент расчёта», посчитать налог
+    и предупредить о лимите в тот день, когда он превышен, а не после. c — клиент уже с этим поступлением.
+
+    Действия: receipt — сформировать чек (для неясного перевода — и отметить его оплатой), work и personal —
+    отметить тип поступления, check — проверка «подходит ли мне самозанятость», ask:<вопрос> — разобрать в чате."""
+    now = now or today()
+    o = next((x for x in c.operations if x.key == key), None)
+    if o is None or o.kind == "salary":
+        return None
+    ref = Refs(chunks)
+    head = f"Поступление {money(o.amount)} · {o.payer}"       # имя плательщика — в именительном падеже
+
+    def notice(level: str, title: str, text: str, actions: list[str]) -> dict:
+        return {"key": o.key, "level": level, "title": title, "text": text, "actions": actions,
+                "sources": ref.sources, "deadline": receipt_deadline(o)}
+
+    if not c.is_npd:
+        if not o.work:
+            return None
+        return notice("info", head, f"Похоже на оплату за работу: «{o.purpose}». С такого дохода можно платить налог "
+                                    f"как самозанятый — 4 % с оплаты от физлиц {ref('rates')}, а встать на учёт можно "
+                                    f"прямо в приложении банка {ref('register_bank')}.", ["check"])
+    if o.kind == "personal":
+        return notice("info", head, f"По назначению «{o.purpose}» это личный перевод, а не доход самозанятого: налог "
+                                    "и чек не нужны. Если это оплата за работу — отметьте, посчитаю налог и подготовлю "
+                                    "чек.", ["work"])
+    if o.key in {x.key for x, _ in former_employer_income(c)}:
+        return notice("error", f"Оплата от бывшего работодателя · {money(o.amount)}",
+                      f"{o.payer}, «{o.purpose}». С увольнения не прошло двух лет, поэтому такой доход не облагается "
+                      f"налогом на профессиональный доход {ref('employer')}: оформить его как доход самозанятого "
+                      "и сформировать чек нельзя.",
+                      ["ask:Что с переводом от моего бывшего работодателя?"])
+    x = crossing(c, now)
+    if o.work and x is not None and any(y is o for y in over_limit(c, now)):
+        first = o is x
+        return notice("error", f"Лимит 2,4 млн ₽ превышен · {money(o.amount)}",
+                      f"{o.payer}, «{o.purpose}». "
+                      + (f"С этой оплатой доход с начала года — {money(gross_income(c, now))}, больше лимита "
+                         f"{ref('limit')}. Право платить налог как самозанятый утрачено со дня превышения "
+                         f"{ref('lose_right')}" if first else
+                         f"Лимит превышен ещё {ddmm(x.day)} — право платить налог как самозанятый утрачено "
+                         f"{ref('lose_right')}")
+                      + f". Со всей суммы этой оплаты отчитываются по другой системе — чек не формируется "
+                        f"{ref('over_limit')}; на переход на упрощёнку есть 20 календарных дней {ref('to_usn')}.",
+                      ["ask:Что мне выгоднее: ИП или самозанятость?", "ask:Сколько мне осталось до лимита?"])
+    plain, tax = _op_tax(c, key, now)
+    rate = f"{round(RATE[o.payer_kind] * 100)} %"
+
+    def tax_text() -> str:
+        text = f"налог с неё — {money(plain)} ({rate} {ref('rates')})"
+        return text + (f", а с бонусом — {money(tax)} {ref('deduction')}" if tax < plain - 0.005 else "")
+
+    if o.kind == "unknown":
+        return notice("warning", f"{head} — это оплата за работу?",
+                      f"Из назначения «{o.purpose}» не понятно, оплата это или личный перевод. Если оплата — чек "
+                      f"нужно сформировать {receipt_deadline(o)} {ref('receipt_term')}, {tax_text()}.",
+                      ["receipt", "personal"])
+    total, _, _ = year_income(c, now)
+    text = (f"Оплата за работу: «{o.purpose}». Чек нужно сформировать {receipt_deadline(o)} {ref('receipt_term')}, "
+            f"{tax_text()}.")
+    level = "info"
+    if total >= WARN_SHARE * LIMIT:
+        level = "warning"
+        text += f" До лимита 2,4 млн ₽ осталось {money(LIMIT - total)} {ref('limit')}."
+    return notice(level, head, text, ["receipt", "personal"])
 
 
 def summary(c: Client, now: date | None = None) -> str:

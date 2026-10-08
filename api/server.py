@@ -129,6 +129,43 @@ def calendar(client_id: str) -> list[Event]:
             for e in account.calendar_events(client)]
 
 
+class OperationEvent(BaseModel):
+    client_id: str = Field(..., description="Демо-клиент (anya, max, liza); в пилоте — клиент из учётной системы банка")
+    amount: float = Field(..., gt=0, examples=[7000])
+    payer: str = Field(..., examples=["Тимур А."])
+    payer_kind: str = Field("person", pattern="^(person|company)$", description="person — физлицо, company — "
+                                                                                "организация или ИП")
+    channel: str = Field("card", pattern="^(card|account)$", description="card — на карту (СБП, по номеру карты), "
+                                                                         "account — по реквизитам счёта")
+    purpose: str = Field("", examples=["Перевод"])
+    inn: str | None = Field(None, description="ИНН плательщика-организации")
+
+
+class Notice(BaseModel):
+    level: str = Field(description="error | warning | info")
+    title: str
+    text: str
+    actions: list[str] = Field(description="receipt — сформировать чек, work / personal — отметить тип поступления, "
+                                           "check — «подходит ли мне самозанятость», ask:<вопрос> — разобрать в чате")
+    deadline: str = Field(description="Срок чека по ч. 3 ст. 14: «в момент оплаты» или «до 9 …»")
+    sources: list[dict]
+
+
+@app.post("/events/operation", response_model=Notice | None, dependencies=[Depends(check_key)])
+def operation_event(ev: OperationEvent) -> Notice | None:
+    """На счёт клиента пришли деньги — текст push-уведомления: что это по закону, срок чека, налог с этой оплаты,
+    лимит. null — уведомление не нужно (например, зарплата). Поступление учитывается вместе с операциями клиента."""
+    client = account.load_clients().get(ev.client_id)
+    if client is None:
+        raise HTTPException(404, f"Нет демо-клиента {ev.client_id}")
+    op = account.make_operation(ev.model_dump(exclude={"client_id"}), account.today(), client.is_npd)
+    n = account.notify(account.with_operations(client, [op]), op.key, agent().index.chunks)
+    if n is None:
+        return None
+    return Notice(level=n["level"], title=n["title"], text=n["text"], actions=n["actions"], deadline=n["deadline"],
+                  sources=[{"n": s["n"], "label": s["label"], "url": s["url"]} for s in n["sources"]])
+
+
 class EligibilityRequest(BaseModel):
     citizenship: str = Field("rf", pattern="^(rf|eaeu|other)$")
     age: str = Field("18", pattern="^(18|14|13)$", description="18 — 18 и больше, 14 — 14–17, 13 — меньше 14")

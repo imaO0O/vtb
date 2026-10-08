@@ -9,6 +9,8 @@
 #   receipt — сформирован ли чек в «Мой налог».
 # year_work_total — сколько всего заработано с начала года: операции прошлых месяцев года достраиваются,
 # чтобы сумма не зависела от дня показа (для клиента у лимита дохода).
+# incoming — переводы, которые «приходят» во время показа (боковая панель → «Пришёл перевод»): помощник сразу
+# присылает уведомление — что это по закону, срок чека, налог, лимит (kbagent/account.py, notify).
 
 clients:
   - id: anya
@@ -34,6 +36,11 @@ clients:
       - {m: 0, d: 3, amount: 4500, payer: "Ирина П.", payer_kind: person, channel: card, kind: work, purpose: "За стикерпак", receipt: false}
       - {m: 0, d: 5, amount: 18000, payer: "ООО «Кофейня на Садовой»", inn: "7712345678", payer_kind: company, channel: account, kind: work, purpose: "Оплата по договору: дизайн меню", receipt: false}
       - {m: 0, d: 6, amount: 2000, payer: "Кирилл Н.", payer_kind: person, channel: card, purpose: "Спасибо!"}
+    incoming:
+      - {amount: 3500, payer: "Полина Г.", payer_kind: person, channel: card, purpose: "За портрет по фото"}
+      - {amount: 7000, payer: "Тимур А.", payer_kind: person, channel: card, purpose: "Перевод"}
+      - {amount: 1500, payer: "Бабушка", payer_kind: person, channel: card, purpose: "На обед"}
+      - {amount: 15000, payer: "ООО «Кофейня на Садовой»", inn: "7712345678", payer_kind: company, channel: account, purpose: "Оплата по договору: афиша"}
 
   - id: max
     name: Максим
@@ -50,6 +57,9 @@ clients:
       - {m: 0, d: 3, amount: 60000, payer: "ООО «Северный ветер»", inn: "7801234567", payer_kind: company, channel: account, kind: work, purpose: "Оплата по договору: съёмка коллекции", receipt: true}
       - {m: 0, d: 4, amount: 15000, payer: "Екатерина М.", payer_kind: person, channel: card, kind: work, purpose: "Портретная съёмка", receipt: false}
       - {m: 0, d: 5, amount: 8000, payer: "Ольга Р.", payer_kind: person, channel: card, purpose: "Перевод"}
+    incoming:
+      - {amount: 12000, payer: "Виктория Д.", payer_kind: person, channel: card, purpose: "Фотосессия в студии"}
+      - {amount: 160000, payer: "ООО «Северный ветер»", inn: "7801234567", payer_kind: company, channel: account, purpose: "Оплата по договору: съёмка каталога"}
 
   - id: liza
     name: Лиза
@@ -70,3 +80,5 @@ clients:
       - {m: 0, d: 1, amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, kind: work, purpose: "За урок"}
       - {m: 0, d: 2, amount: 5000, payer: "Папа", payer_kind: person, channel: card, kind: personal, purpose: "На телефон"}
       - {m: 0, d: 4, amount: 3000, payer: "Олег Т.", payer_kind: person, channel: card, kind: work, purpose: "Английский, 2 занятия"}
+    incoming:
+      - {amount: 1500, payer: "Наталья Б.", payer_kind: person, channel: card, purpose: "За урок"}
