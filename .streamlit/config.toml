@@ -1,0 +1,25 @@
+# Оформление чата: светлая тема, один акцентный цвет (синий, как у иконки «Первый чек»).
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+maxUploadSize = 50
+
+[theme]
+base = "light"
+primaryColor = "#2350C8"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F5FC"
+textColor = "#16213B"
+linkColor = "#1F46B0"
+borderColor = "#DCE3F2"
+showSidebarBorder = true
+baseRadius = "0.7rem"
+font = "sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#F6F8FD"
+secondaryBackgroundColor = "#EAF0FB"
