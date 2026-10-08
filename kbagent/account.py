@@ -17,7 +17,7 @@ import calendar
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 import yaml
 
@@ -57,6 +57,9 @@ RULES = {
     "ip_contrib": ("nk_rf", "430", "1.2", None),
     "usn_notice": ("nk_rf", "346.13", "2", None),
     "usn_limit": ("nk_rf", "346.13", "4", None),
+    "receipt_fields": ("fz422", "14", "6", None),
+    "bank_partner": ("fz422", "3", "3", None),
+    "autopay": ("fz422", "11", "4", None),
 }
 
 # ИП на УСН «доходы» без работников (НК РФ): ставка 6 % (п. 1 ст. 346.20, регион может снизить), налог уменьшается
@@ -81,10 +84,16 @@ class Operation:
     purpose: str
     receipt: bool | None = None
     inn: str | None = None
+    reason: str = ""             # почему банк отнёс поступление к этому типу (для unknown — почему не уверен)
 
     @property
     def work(self) -> bool:
         return self.kind == "work"
+
+    @property
+    def key(self) -> str:
+        """Устойчивый ключ операции — для подтверждений клиента и сформированных чеков."""
+        return f"{self.day.isoformat()}|{self.payer}|{round(self.amount)}"
 
 
 @dataclass
@@ -97,10 +106,62 @@ class Client:
     deduction_used: float
     operations: list[Operation]
     former_employers: list[dict] = field(default_factory=list)
+    full_name: str = ""          # для черновика чека (демо — вымышленные)
+    inn: str = ""
+    consent: bool = True         # согласие на анализ поступлений помощником (для банковских лидов)
+    autopay: bool = False        # банк уполномочен платить налог (ч. 4 ст. 11 422-ФЗ)
 
     @property
     def is_npd(self) -> bool:
         return self.npd_since is not None
+
+
+# ---------- тип поступления ----------
+
+# Назначение платежа, по которому видно оплату за работу или личный перевод. Перевод без ясного назначения банк
+# не относит ни к доходу, ни к личным — спрашивает клиента: ошибка в любую сторону — это либо лишний налог,
+# либо доход без чека и штраф.
+WORK_RE = re.compile(r"урок|заняти|заказ|договор|оплат|услуг|портрет|съ[её]мк|фото|дизайн|макет|логотип|иллюстрац|"
+                     r"стикер|работ|консультац|ремонт|репетит|сайт|монтаж|маникюр|стрижк|тренировк|обложк|меню|"
+                     r"английск|предоплат", re.I)
+PERSONAL_RE = re.compile(r"\bмам|\bпап|бабушк|дедушк|сестр|брат|на обед|на проезд|на телефон|подарок|день рождени|"
+                         r"\bс др\b|долг|верну|займ|карманн|на кино", re.I)
+
+
+def classify(purpose: str, payer: str, payer_kind: str) -> tuple[str, str]:
+    """Тип поступления по назначению и плательщику: work, personal или unknown — и причина."""
+    text = f"{payer} {purpose}"
+    if PERSONAL_RE.search(text):
+        return "personal", "по назначению похоже на личный перевод"
+    if payer_kind == "company":
+        return "work", "плательщик — организация или ИП"
+    if WORK_RE.search(purpose):
+        return "work", "в назначении — оплата работы или услуги"
+    return "unknown", "из назначения платежа не понятно, оплата это или личный перевод"
+
+
+def apply_overrides(c: Client, kinds: dict | None = None, receipts: set | None = None) -> Client:
+    """Клиент подтвердил тип поступления или сформировал чек — копия клиента с учётом этого."""
+    kinds, receipts = kinds or {}, receipts or set()
+    if not kinds and not receipts:
+        return c
+    ops = []
+    for o in c.operations:
+        kind = kinds.get(o.key, o.kind)
+        receipt = True if o.key in receipts else o.receipt
+        if kind == "work" and receipt is None:
+            receipt = False
+        reason = "подтверждено клиентом" if o.key in kinds else o.reason
+        ops.append(Operation(o.day, o.amount, o.payer, o.payer_kind, o.channel, kind, o.purpose, receipt, o.inn,
+                             reason))
+    return Client(c.id, c.name, c.age, c.about, c.npd_since, c.deduction_used, ops, c.former_employers, c.full_name,
+                  c.inn, c.consent, c.autopay)
+
+
+def unconfirmed(c: Client, now: date | None = None) -> list[Operation]:
+    """Поступления, про которые банк не уверен, — клиента спрашивают, оплата ли это."""
+    now = now or today()
+    return [o for o in c.operations if o.kind == "unknown" and o.day.year == now.year and o.day <= now]
 
 
 # ---------- демо-данные ----------
@@ -151,15 +212,21 @@ def load_clients(now: date | None = None) -> dict[str, Client]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))["clients"]
     clients = {}
     for c in data:
-        ops = [Operation(_day(now, o["m"], o["d"]), float(o["amount"]), o["payer"], o["payer_kind"], o["channel"],
-                         o["kind"], o["purpose"], o.get("receipt"), o.get("inn")) for o in c["operations"]]
+        ops = []
+        for o in c["operations"]:
+            # тип задан в данных (зарплата, подтверждённый клиентом) — иначе его определяет банк по назначению
+            kind, reason = (o["kind"], "") if o.get("kind") else classify(o["purpose"], o["payer"], o["payer_kind"])
+            receipt = o.get("receipt", False if kind == "work" and c.get("npd_since_months") is not None else None)
+            ops.append(Operation(_day(now, o["m"], o["d"]), float(o["amount"]), o["payer"], o["payer_kind"],
+                                 o["channel"], kind, o["purpose"], receipt, o.get("inn"), reason))
         if c.get("year_work_total"):
             ops += _fill_year(ops, float(c["year_work_total"]), now)
         ops.sort(key=lambda o: o.day)
         since = c.get("npd_since_months")
         clients[c["id"]] = Client(c["id"], c["name"], c["age"], c["about"],
                                   _day(now, since, 1) if since is not None else None, float(c.get("deduction_used", 0)),
-                                  ops, c.get("former_employers", []))
+                                  ops, c.get("former_employers", []), c.get("full_name", ""), c.get("inn", ""),
+                                  c.get("consent", True), c.get("autopay", False))
     return clients
 
 
@@ -263,8 +330,9 @@ def ddmm(d: date) -> str:
 class Refs:
     """Ссылки на статьи закона: [n] в тексте и кнопка-источник под ответом."""
 
-    def __init__(self, chunks: list[Chunk]):
+    def __init__(self, chunks: list[Chunk], rules: dict | None = None):
         self.chunks, self.sources, self._n = chunks, [], {}
+        self.rules = rules or RULES
 
     def find(self, doc_id: str, article: str, part: str | None, item: str | None,
              contains: str | None = None) -> Chunk | None:
@@ -281,12 +349,13 @@ class Refs:
         return min(found, key=lambda c: (c.item is None, len(c.text)), default=None)
 
     def __call__(self, rule: str) -> str:
-        chunk = self.find(*RULES[rule])
+        chunk = self.find(*self.rules[rule])
         if chunk is None:
             return ""
         if chunk.id not in self._n:
             self._n[chunk.id] = len(self.sources) + 1
-            label = f"{chunk.short or chunk.doc_title}, {chunk.ref}"
+            label = (f"{chunk.short or chunk.doc_title}, {chunk.ref}" if chunk.article
+                     else f"{chunk.short or chunk.doc_title}: «{chunk.heading}»")
             self.sources.append({"n": self._n[chunk.id], "label": label, "text": chunk.text, "doc_id": chunk.doc_id,
                                  "doc_kind": chunk.doc_kind, "clause": chunk.clause, "article": chunk.article,
                                  "item": chunk.item, "url": chunk.url, "page": None, "page_end": None,
@@ -336,6 +405,9 @@ FIRST_PERSON_RE = re.compile(r"\b(?:я|мне|меня|мной|мой|моя|м
 HYPOTHETICAL_RE = re.compile(r"\bесли\b|\bбуду\b|\bбудет\b|можно ли|могу ли|нужно ли|надо ли|обязан\w* ли|"
                              r"имею ли|вправе ли|как (?:мне )?(?:стать|зарегистр|перейти|открыть|оформить)", re.I)
 INTENTS = [
+    # «какие у меня сроки», «когда мне платить налог» — календарь, хотя в вопросе есть слово «налог»
+    ("calendar", re.compile(r"\bсрок\w*|календар\w*|напомина\w*|дедлайн\w*|ближайш\w*|"
+                            r"когда (?:мне )?(?:нужно |надо )?(?:платить|заплатить|оплатить|пробить|сформировать)", re.I)),
     # «всё ли у меня в порядке с налогами» — обзор, хотя в вопросе есть слово «налог»
     ("overview", re.compile(r"вс[её] ли (?:у меня )?(?:в порядке|нормально|хорошо|ок)|что у меня (?:со?|по)\b|"
                             r"есть ли у меня (?:проблем|ошиб|долг|риск)|провер\w+ (?:мо[йиюё]|меня)", re.I)),
@@ -406,7 +478,7 @@ def answer(intent: str, c: Client, chunks: list[Chunk], now: date | None = None,
         out = _not_registered(c, ref, now, intent)
     else:
         out = {"limit": _limit, "tax": _tax, "receipts": _receipts, "employer": _employer, "income": _income,
-               "overview": _overview}[intent](c, ref, now)
+               "overview": _overview, "calendar": _calendar}[intent](c, ref, now)
     out.sources, out.intent = ref.sources, intent
     return out
 
@@ -661,16 +733,30 @@ def warnings(c: Client, now: date | None = None) -> list[dict]:
                     "ask": "По каким поступлениям у меня нет чека?"})
     total, _, _ = year_income(c, now)
     if total >= WARN_SHARE * LIMIT:
+        _, reach = limit_pace(c, now)
         out.append({"level": "warning", "title": "Доход близко к лимиту 2,4 млн ₽",
-                    "text": f"С начала года {money(total)}, осталось {money(max(LIMIT - total, 0))}.",
+                    "text": f"С начала года {money(total)}, осталось {money(max(LIMIT - total, 0))}."
+                            + (f" При нынешнем темпе лимит закончится около {ddmm(reach)}." if reach else ""),
                     "ask": "Сколько мне осталось до лимита?"})
     py, pm = _month_shift(now, 1)
     prev = month_tax(c, py, pm, now)
     if prev.payable >= MIN_TAX and now.day <= 28:
         out.append({"level": "info", "title": f"Налог за {MONTHS[pm - 1]}",
-                    "text": f"Около {money(prev.payable)}, заплатить до 28 {MONTHS_GEN[now.month - 1]}.",
+                    "text": f"Около {money(prev.payable)}, заплатить до 28 {MONTHS_GEN[now.month - 1]}"
+                            + (" — заплатит банк по автоплатежу." if c.autopay else "."),
                     "ask": "Сколько налога мне платить?"})
-    return out
+    return out + _unconfirmed_hint(c, now)
+
+
+def _unconfirmed_hint(c: Client, now: date) -> list[dict]:
+    ops = unconfirmed(c, now)
+    if not ops:
+        return []
+    return [{"level": "info", "title": "Это оплата за работу?",
+             "text": f"{plural(len(ops), 'поступление', 'поступления', 'поступлений')} без понятного назначения: "
+                     + "; ".join(f"{ddmm(o.day)}, {o.payer}, {money(o.amount)}" for o in ops[:3])
+                     + ". Отметьте в разделе «Чеки и сроки» — от этого зависят налог и лимит.",
+             "ask": None}]
 
 
 def _overview(c: Client, ref: Refs, now: date) -> AccountAnswer:
@@ -681,7 +767,9 @@ def _overview(c: Client, ref: Refs, now: date) -> AccountAnswer:
                              f"доход с начала года — {money(total)} из 2,4 млн ₽ {ref('limit')}.", [])
     parts = []
     for w in items:
-        if w["ask"].startswith("Сколько налога"):
+        if not w["ask"]:
+            body = w["text"]
+        elif w["ask"].startswith("Сколько налога"):
             body = _tax(c, ref, now).text
         elif w["ask"].startswith("По каким"):
             body = _receipts(c, ref, now).text
@@ -709,6 +797,166 @@ def _not_registered(c: Client, ref: Refs, now: date, intent: str) -> AccountAnsw
              "_Предложение банка:_ встать на учёт можно прямо в приложении банка — данные паспорта заполнятся сами.")
     cols, rows = _rows(lessons) if intent in ("income", "overview") else ([], [])
     return AccountAnswer(text, [], cols, rows)
+
+
+# ---------- действия: чек, сроки, темп дохода ----------
+
+def mask_inn(inn: str) -> str:
+    return f"•••• {inn[-4:]}" if inn else "—"
+
+
+def receipt_draft(c: Client, o: Operation, now: date | None = None) -> dict:
+    """Черновик чека по реквизитам ч. 6 ст. 14 422-ФЗ. Сформировать его может банк, если клиент уполномочил банк
+    на информационный обмен с ФНС (ч. 3 ст. 3) — в прототипе это демо-действие. Оплату от бывшего работодателя
+    чеком оформить нельзя: такой доход не облагается налогом на профессиональный доход."""
+    now = now or today()
+    employer = {id(x) for x, _ in former_employer_income(c)}
+    problems = []
+    if id(o) in employer:
+        problems.append("Это оплата от бывшего работодателя: такой доход не облагается налогом на профессиональный "
+                        "доход, чек по нему не формируется.")
+    if not c.is_npd:
+        problems.append("Вы пока не стоите на учёте как самозанятый — сначала нужно встать на учёт.")
+    if o.payer_kind == "company" and not o.inn:
+        problems.append("Покупатель — организация или ИП: в чеке нужен его ИНН. Попросите его у заказчика.")
+    fields = [
+        ("Наименование документа", "Чек"),
+        ("Дата и время расчёта", f"{o.day:%d.%m.%Y}"),
+        ("Продавец", c.full_name or c.name),
+        ("ИНН продавца", mask_inn(c.inn)),
+        ("Специальный налоговый режим", "Налог на профессиональный доход"),
+        ("Работы, услуги", o.purpose),
+        ("Сумма расчёта", money(o.amount)),
+        ("ИНН покупателя", o.inn if o.payer_kind == "company" and o.inn else
+         "не нужен — покупатель физическое лицо" if o.payer_kind == "person" else "нужен"),
+        ("Дата и время формирования", f"{now:%d.%m.%Y}"),
+        ("Банк, сформировавший чек", "банк-партнёр (если клиент его уполномочил)"),
+        ("Номер чека", "присвоит ФНС при формировании"),
+    ]
+    return {"fields": fields, "problems": problems, "deadline": receipt_deadline(o), "ok": not problems}
+
+
+def limit_pace(c: Client, now: date | None = None) -> tuple[float, date | None]:
+    """Средний доход за день с начала года (или с постановки на учёт) и дата, когда при таком темпе доход
+    дойдёт до лимита 2,4 млн ₽, — если это случится в этом году."""
+    now = now or today()
+    total, _, _ = year_income(c, now)
+    start = max(date(now.year, 1, 1), c.npd_since or date(now.year, 1, 1))
+    days = max((now - start).days + 1, 1)
+    per_day = total / days
+    if per_day <= 0 or total >= LIMIT:
+        return per_day, (now if total >= LIMIT else None)
+    reach = now + timedelta(days=int((LIMIT - total) / per_day) + 1)
+    return per_day, reach if reach.year == now.year else None
+
+
+def calendar_events(c: Client, now: date | None = None) -> list[dict]:
+    """Ближайшие сроки и события самозанятого: чеки, уведомление и уплата налога, лимит, вопросы банка.
+    Каждое событие — с правилом закона (ключ RULES) и вопросом, который помощник разберёт подробнее."""
+    now = now or today()
+    events = []
+    for o in unconfirmed(c, now):
+        events.append({"date": now, "level": "info", "title": "Уточните поступление",
+                       "text": f"{ddmm(o.day)}: {money(o.amount)} от {o.payer} («{o.purpose}») — это оплата за работу "
+                               "или личный перевод?", "rule": None, "ask": None})
+    if not c.is_npd:
+        return events
+    for o in no_receipt(c, now):
+        if o.channel == "card":
+            when, text = now, f"{ddmm(o.day)}, {o.payer}, {money(o.amount)}: чек нужно было сформировать в момент оплаты"
+            level = "error"
+        else:
+            year, month = _month_shift(o.day, -1)
+            when, level = date(year, month, 9), "warning"
+            text = f"{ddmm(o.day)}, {o.payer}, {money(o.amount)}: сформировать чек до {ddmm(when)}"
+        events.append({"date": when, "level": level, "title": "Чек", "text": text, "rule": "receipt_term",
+                       "ask": "По каким поступлениям у меня нет чека?"})
+    py, pm = _month_shift(now, 1)
+    prev = month_tax(c, py, pm, now)
+    if prev.payable >= MIN_TAX and now.day <= 28:
+        if now.day <= 12:
+            events.append({"date": date(now.year, now.month, 12), "level": "info", "title": "Уведомление ФНС",
+                           "text": f"ФНС пришлёт в «Мой налог» сумму налога за {MONTHS[pm - 1]}", "rule": "notice",
+                           "ask": "Сколько налога мне платить?"})
+        events.append({"date": date(now.year, now.month, 28), "level": "warning", "title": "Уплата налога",
+                       "text": f"Налог за {MONTHS[pm - 1]} — около {money(prev.payable)}"
+                               + (" (заплатит банк по автоплатежу)" if c.autopay else ""),
+                       "rule": "pay_until", "ask": "Сколько налога мне платить?"})
+    cur = month_tax(c, now.year, now.month, now)
+    ny, nm = _month_shift(now, -1)
+    if cur.payable > 0:
+        events.append({"date": date(ny, nm, 28), "level": "info", "title": "Налог за текущий месяц",
+                       "text": f"За {MONTHS[now.month - 1]} пока около {money(cur.payable)}, заплатить до "
+                               f"28 {MONTHS_GEN[nm - 1]}", "rule": "pay_until", "ask": "Сколько налога мне платить?"})
+    total, _, _ = year_income(c, now)
+    _, reach = limit_pace(c, now)
+    if total >= WARN_SHARE * LIMIT or reach:
+        text = f"С начала года {money(total)}, до лимита {money(max(LIMIT - total, 0))}"
+        if reach:
+            text += f"; при нынешнем темпе лимит закончится около {ddmm(reach)}"
+        events.append({"date": reach or now, "level": "warning", "title": "Лимит 2,4 млн ₽", "text": text,
+                       "rule": "limit", "ask": "Что мне выгоднее: ИП или самозанятость?"})
+    return sorted(events, key=lambda e: e["date"])
+
+
+def _calendar(c: Client, ref: Refs, now: date) -> AccountAnswer:
+    events = calendar_events(c, now)
+    if not c.is_npd and not events:
+        return _not_registered(c, ref, now, "calendar")
+    if not events:
+        return AccountAnswer("Ближайших сроков нет: чеки сформированы, налог за прошлый месяц уплачен или меньше 100 ₽ "
+                             f"{ref('notice')}.", [])
+    lines = ["Ваши ближайшие сроки:"]
+    for e in events:
+        mark = ref(e["rule"]) if e["rule"] else ""
+        when = "сегодня" if e["date"] == now else ddmm(e["date"])
+        lines.append(f"- **{when} — {e['title']}.** {e['text']} {mark}".rstrip())
+    if c.is_npd and not c.autopay:
+        lines.append(f"\nНалог можно не держать в голове: банк может платить его сам, если уполномочить его "
+                     f"{ref('autopay')}. _Это предложение банка._")
+    return AccountAnswer("\n".join(lines), [])
+
+
+PRODUCTS = {
+    "register": "Постановка на учёт как самозанятый через банк",
+    "receipts": "Чеки через банк (банк — партнёр ФНС)",
+    "autopay": "Автоплатёж налога",
+    "ip": "ИП, расчётный счёт и эквайринг",
+}
+
+
+def leads(clients: dict, now: date | None = None) -> list[dict]:
+    """Для банка: кому и что предложить — только по клиентам, давшим согласие на анализ поступлений."""
+    now = now or today()
+    out = []
+    for c in clients.values():
+        if not c.consent:
+            continue
+        lessons = [o for o in c.operations if o.work and (now - o.day).days <= 92]
+        if not c.is_npd and lessons:
+            out.append({"client": c.name, "stage": STAGES[stage(c, now)], "product": PRODUCTS["register"],
+                        "signal": f"{plural(len(lessons), 'оплата', 'оплаты', 'оплат')} за работу за 3 месяца на "
+                                  f"{money(sum(o.amount for o in lessons))}", "priority": 2})
+            continue
+        if not c.is_npd:
+            continue
+        missing = no_receipt(c, now)
+        if missing:
+            out.append({"client": c.name, "stage": STAGES[stage(c, now)], "product": PRODUCTS["receipts"],
+                        "signal": f"{plural(len(missing), 'поступление', 'поступления', 'поступлений')} без чека "
+                                  f"на {money(sum(o.amount for o in missing))}", "priority": 2})
+        if not c.autopay:
+            out.append({"client": c.name, "stage": STAGES[stage(c, now)], "product": PRODUCTS["autopay"],
+                        "signal": "налог платит вручную", "priority": 3})
+        total, _, _ = year_income(c, now)
+        _, reach = limit_pace(c, now)
+        if total >= WARN_SHARE * LIMIT or (reach and (reach - now).days <= 90):
+            signal = f"до лимита {money(max(LIMIT - total, 0))}"
+            if reach:
+                signal += f", при нынешнем темпе — около {ddmm(reach)}"
+            out.append({"client": c.name, "stage": STAGES[stage(c, now)], "product": PRODUCTS["ip"], "signal": signal,
+                        "priority": 1})
+    return sorted(out, key=lambda x: x["priority"])
 
 
 def summary(c: Client, now: date | None = None) -> str:

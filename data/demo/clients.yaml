@@ -2,6 +2,8 @@
 # Даты операций задаются относительно сегодняшнего дня, чтобы демо выглядело одинаково в любой день показа:
 #   m — сколько месяцев назад (0 — текущий месяц), d — число месяца (в текущем месяце — не позже сегодняшнего);
 #   kind: work — оплата за работу (профессиональный доход), salary — зарплата, personal — перевод от близких;
+#         не задан — тип определяет банк по назначению платежа (kbagent/account.py, classify), а если не уверен —
+#         спрашивает клиента;
 #   payer_kind: person — физическое лицо (ставка 4 %), company — организация или ИП (6 %);
 #   channel: card — перевод на карту (СБП, по номеру карты), account — платёж по реквизитам счёта;
 #   receipt — сформирован ли чек в «Мой налог».
@@ -12,6 +14,9 @@ clients:
   - id: anya
     name: Аня
     age: 19
+    full_name: Смирнова Анна Олеговна      # вымышленные ФИО и ИНН — для черновика чека
+    inn: "770000000019"
+    autopay: false
     about: "Студентка, рисует иллюстрации и портреты на заказ. Самозанятая третий месяц."
     npd_since_months: 2            # встала на учёт как самозанятая — 2 месяца назад
     deduction_used: 0              # бонус 10 000 ₽ ещё не использован
@@ -28,10 +33,14 @@ clients:
       - {m: 0, d: 2, amount: 5000, payer: "Мария К.", payer_kind: person, channel: card, kind: work, purpose: "Портрет в подарок", receipt: true}
       - {m: 0, d: 3, amount: 4500, payer: "Ирина П.", payer_kind: person, channel: card, kind: work, purpose: "За стикерпак", receipt: false}
       - {m: 0, d: 5, amount: 18000, payer: "ООО «Кофейня на Садовой»", inn: "7712345678", payer_kind: company, channel: account, kind: work, purpose: "Оплата по договору: дизайн меню", receipt: false}
+      - {m: 0, d: 6, amount: 2000, payer: "Кирилл Н.", payer_kind: person, channel: card, purpose: "Спасибо!"}
 
   - id: max
     name: Максим
     age: 24
+    full_name: Ковалёв Максим Игоревич
+    inn: "780000000024"
+    autopay: true
     about: "Фотограф: свадьбы, портреты, съёмки для брендов. Самозанятый третий год."
     npd_since_months: 30
     deduction_used: 10000          # бонус израсходован
@@ -40,10 +49,13 @@ clients:
       - {m: 0, d: 1, amount: 45000, payer: "Анна и Сергей Л.", payer_kind: person, channel: card, kind: work, purpose: "Свадебная съёмка, предоплата", receipt: true}
       - {m: 0, d: 3, amount: 60000, payer: "ООО «Северный ветер»", inn: "7801234567", payer_kind: company, channel: account, kind: work, purpose: "Оплата по договору: съёмка коллекции", receipt: true}
       - {m: 0, d: 4, amount: 15000, payer: "Екатерина М.", payer_kind: person, channel: card, kind: work, purpose: "Портретная съёмка", receipt: false}
+      - {m: 0, d: 5, amount: 8000, payer: "Ольга Р.", payer_kind: person, channel: card, purpose: "Перевод"}
 
   - id: liza
     name: Лиза
     age: 18
+    full_name: Белова Елизавета Андреевна
+    inn: "500000000018"
     about: "Первокурсница, занимается с детьми английским. Пока не самозанятая."
     npd_since_months: null         # не стоит на учёте как самозанятая
     deduction_used: 0
