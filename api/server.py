@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from kbagent import account, llm  # noqa: E402
+from kbagent import account, llm, specialists  # noqa: E402
+from kbagent.eligibility import check as check_eligibility  # noqa: E402
 from kbagent.agent import Agent  # noqa: E402
 
 app = FastAPI(title="Первый чек — API", version="1.0",
@@ -78,7 +79,7 @@ class Hint(BaseModel):
     level: str = Field(description="error | warning | info")
     title: str
     text: str
-    ask: str = Field(description="Вопрос, который показать кнопкой «Подробнее»")
+    ask: str | None = Field(None, description="Вопрос для кнопки «Подробнее»; пусто — действие в разделе «Чеки и сроки»")
 
 
 @app.get("/health")
@@ -108,3 +109,62 @@ def hints(client_id: str) -> list[Hint]:
     if client is None:
         raise HTTPException(404, f"Нет демо-клиента {client_id}")
     return [Hint(**w) for w in account.warnings(client)]
+
+
+class Event(BaseModel):
+    date: str
+    level: str = Field(description="error | warning | info")
+    title: str
+    text: str
+    ask: str | None = None
+
+
+@app.get("/calendar/{client_id}", response_model=list[Event], dependencies=[Depends(check_key)])
+def calendar(client_id: str) -> list[Event]:
+    """Ближайшие сроки: чеки, уведомление и уплата налога, дата исчерпания лимита при нынешнем темпе."""
+    client = account.load_clients().get(client_id)
+    if client is None:
+        raise HTTPException(404, f"Нет демо-клиента {client_id}")
+    return [Event(date=e["date"].isoformat(), level=e["level"], title=e["title"], text=e["text"], ask=e["ask"])
+            for e in account.calendar_events(client)]
+
+
+class EligibilityRequest(BaseModel):
+    citizenship: str = Field("rf", pattern="^(rf|eaeu|other)$")
+    age: str = Field("18", pattern="^(18|14|13)$", description="18 — 18 и больше, 14 — 14–17, 13 — меньше 14")
+    activity: list[str] = Field(default_factory=lambda: ["services"])
+    employees: bool = False
+    income: bool = Field(False, description="доход за год может превысить 2,4 млн ₽")
+    regime: str = Field("none", pattern="^(none|special|general)$")
+    employer: bool = Field(False, description="заказчик — нынешний или бывший (меньше двух лет) работодатель")
+    civil: bool = Field(False, description="государственный или муниципальный служащий")
+
+
+class EligibilityResponse(BaseModel):
+    status: str = Field(description="yes | conditions | no")
+    title: str
+    items: list[dict]
+    next_steps: list[str]
+    sources: list[dict]
+
+
+@app.post("/eligibility", response_model=EligibilityResponse, dependencies=[Depends(check_key)])
+def eligibility(req: EligibilityRequest) -> EligibilityResponse:
+    """«Подходит ли мне самозанятость?» — вывод по правилам 422-ФЗ со ссылками на пункты."""
+    v = check_eligibility(req.model_dump(), agent().index.chunks)
+    return EligibilityResponse(status=v.status, title=v.title, items=[{"level": lv, "text": t} for lv, t in v.items],
+                               next_steps=v.next_steps,
+                               sources=[{"n": s["n"], "label": s["label"], "url": s["url"]} for s in v.sources])
+
+
+class HandoffRequest(BaseModel):
+    question: str = Field(..., min_length=2, max_length=1000)
+    client_id: str | None = None
+    assistant_answer: str = ""
+
+
+@app.post("/handoff", dependencies=[Depends(check_key)])
+def handoff(req: HandoffRequest) -> dict:
+    """Передать вопрос специалисту банка: ответ специалиста публикуется в базу знаний."""
+    item = specialists.ask_specialist(req.question, req.client_id, req.assistant_answer)
+    return {"id": item["id"], "status": item["status"]}

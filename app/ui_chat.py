@@ -5,9 +5,9 @@ import time
 import pandas as pd
 import streamlit as st
 
-from app.ui_common import (APP_NAME, APP_TAGLINE, BADGES, LOGO, ROUTE_LABELS, USER_AVATAR, clients, get_agent,
-                           health)
-from kbagent import account
+from app.ui_common import (APP_NAME, APP_TAGLINE, BADGES, LOGO, ROUTE_LABELS, USER_AVATAR, assistant_client, consent,
+                           current_client, get_agent, go, health)
+from kbagent import account, specialists
 from kbagent.journal import save_feedback
 from kbagent.text import law_text
 
@@ -20,13 +20,16 @@ EXAMPLES = [
 ACCOUNT_EXAMPLES = ["Сколько мне осталось до лимита?", "Что мне выгоднее: ИП или самозанятость?",
                     "По каким поступлениям у меня нет чека?", "Сколько налога мне платить?"]
 LEVEL_ICONS = {"error": ":material/error:", "warning": ":material/warning:", "info": ":material/info:"}
+# «подходит ли мне самозанятость», «могу ли я стать самозанятым» — предложить проверку по закону
+FIT_RE = re.compile(r"подход\w* ли (?:мне )?(?:самозанят|нпд|режим)|могу ли я (?:стать|быть) самозанят|"
+                    r"стоит ли (?:мне )?(?:становиться|стать) самозанят", re.I)
+UNANSWERED = {"no_data", "model_refused", "unverified"}
 
 
 # ---------- клиент и диалог ----------
 
 def _client() -> "account.Client | None":
-    cid = st.session_state.get("client_id")
-    return clients(account.today().isoformat()).get(cid) if cid else None
+    return assistant_client()
 
 
 def _items() -> list[dict]:
@@ -100,6 +103,18 @@ def render_answer(item: dict, i: int) -> None:
                 st.session_state.pending = option
                 st.rerun()
 
+    if FIT_RE.search(item["question"]) and st.button("Проверить по закону: подходит ли мне самозанятость",
+                                                      key=f"fit-{uid}", icon=":material/fact_check:"):
+        go("check")
+    if item["status"] in UNANSWERED and item["route"] == "documents":
+        if item.get("handoff"):
+            st.caption("Вопрос передан специалисту банка. Его ответ со ссылкой на норму появится в базе знаний — "
+                       "и помощник будет отвечать на такой вопрос сам.")
+        elif st.button("Передать вопрос специалисту банка", key=f"handoff-{uid}", icon=":material/support_agent:"):
+            specialists.ask_specialist(item["question"], st.session_state.get("client_id"), item["text"])
+            item["handoff"] = True
+            st.rerun()
+
     if item.get("rows"):
         st.dataframe(pd.DataFrame(item["rows"], columns=item["columns"]), hide_index=True, use_container_width=True)
 
@@ -146,9 +161,12 @@ def _hints(client: "account.Client") -> None:
     for k, w in enumerate(items):
         with st.container(key=f"hint-{w['level']}-{k}"):
             st.markdown(f"{LEVEL_ICONS[w['level']]} **{w['title']}**  \n{w['text']}")
-            if st.button("Подробнее", key=f"hint-ask-{k}", type="tertiary", icon=":material/arrow_forward:"):
-                st.session_state.pending = w["ask"]
-                st.rerun()
+            if st.button("Подробнее" if w["ask"] else "Отметить", key=f"hint-ask-{k}", type="tertiary",
+                         icon=":material/arrow_forward:"):
+                if w["ask"]:
+                    st.session_state.pending = w["ask"]
+                    st.rerun()
+                go("tools")
 
 
 PATH_CSS = """
@@ -186,6 +204,13 @@ def _hero(client: "account.Client | None") -> None:
     if client:
         _path(client)
         _hints(client)
+    elif current_client() is not None and not consent():
+        st.info("Анализ поступлений выключен — отвечаю только по закону. Включите его слева, чтобы я подсказывал "
+                "про лимит, чеки и налог по вашему счёту.", icon=":material/lock:")
+    if client is None or not client.is_npd:
+        if st.button("Подходит ли мне самозанятость? — проверка за минуту", key="fit-hero",
+                     icon=":material/fact_check:"):
+            go("check")
     st.caption("Например:")
     examples = (ACCOUNT_EXAMPLES[:2] + EXAMPLES[:2]) if client and client.is_npd else EXAMPLES
     cols = st.columns(2)

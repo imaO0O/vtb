@@ -72,6 +72,41 @@ def clients(day: str) -> dict:
     return account.load_clients()
 
 
+def client_state(cid: str) -> dict:
+    """Что клиент сделал в этой сессии: подтвердил тип поступлений, сформировал чеки, включил автоплатёж."""
+    return st.session_state.setdefault("client_state", {}).setdefault(
+        cid, {"kinds": {}, "receipts": set(), "autopay": None})
+
+
+def current_client() -> "account.Client | None":
+    """Выбранный демо-клиент с учётом его действий в этой сессии."""
+    cid = st.session_state.get("client_id")
+    base = clients(account.today().isoformat()).get(cid) if cid else None
+    if base is None:
+        return None
+    state = client_state(cid)
+    c = account.apply_overrides(base, state["kinds"], state["receipts"])
+    if state["autopay"] is not None:
+        c.autopay = state["autopay"]
+    return c
+
+
+def consent() -> bool:
+    """Согласие клиента на анализ поступлений помощником (без него — только ответы по закону)."""
+    return bool(st.session_state.get("consent", True))
+
+
+def assistant_client() -> "account.Client | None":
+    return current_client() if consent() else None
+
+
+def go(page: str, question: str | None = None) -> None:
+    """Перейти на страницу приложения; question — задать его в чате."""
+    if question:
+        st.session_state.pending = question
+    st.switch_page(st.session_state["pages"][page])
+
+
 @st.cache_data(ttl=15, show_spinner=False)
 def health() -> dict[str, bool]:
     return llm.health()
