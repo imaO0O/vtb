@@ -14,7 +14,8 @@ from kbagent.journal import load_audit, load_feedback
 
 ROOT = Path(__file__).resolve().parents[1]
 INTENT_LABELS = {"limit": "Остаток до лимита", "tax": "Налог за месяц", "receipts": "Поступления без чека",
-                 "employer": "Оплата от бывшего работодателя", "income": "Доход за период", "overview": "Обзор счёта"}
+                 "employer": "Оплата от бывшего работодателя", "income": "Доход за период", "overview": "Обзор счёта",
+                 "compare": "ИП или самозанятость", "forecast": "Прогноз по лимиту"}
 SERVICE = {None, "", "eval", "smoke"}
 
 
@@ -30,8 +31,8 @@ def overview(records: list[dict]) -> None:
     c1.metric("Вопросов", len(asked))
     c2.metric("С ответом", f"{len(answered) / len(asked):.0%}" if asked else "—")
     c3.metric("По счёту клиента", sum(r.get("route") == "account" for r in asked))
-    times = sorted(r.get("seconds", 0) for r in asked)
-    c4.metric("Время ответа, медиана", f"{times[len(times) // 2]:.1f} с".replace(".", ",") if times else "—")
+    times = sorted(r.get("seconds", 0) for r in asked if r.get("route") == "documents")   # расчёт по счёту — мгновенно
+    c4.metric("Ответ по закону, медиана", f"{times[len(times) // 2]:.1f} с".replace(".", ",") if times else "—")
     intents = Counter(INTENT_LABELS.get(r.get("intent"), r.get("intent")) for r in asked if r.get("intent"))
     if intents:
         st.markdown("**О чём спрашивают по своему счёту** — сигнал для предложений банка (лимит → ИП и расчётный "

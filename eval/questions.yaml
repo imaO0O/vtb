@@ -455,6 +455,25 @@ questions:
     client: anya
     question: Сколько я заработала в этом месяце?
     must_include: ["27 500"]
+  # добавлены после отложенного прогона вместе со сравнением режимов и прогнозом по лимиту
+  - id: A12
+    group: счёт
+    type: account
+    client: max
+    question: Что мне выгоднее — ИП или самозанятость?
+    must_include: ["135 000", "76 890"]
+  - id: A13
+    group: счёт
+    type: account
+    client: max
+    question: Уложусь ли я в лимит, если до конца года придёт ещё 120 тысяч?
+    must_include: ["2 370 000", "30 000"]
+  - id: A14
+    group: счёт
+    type: account
+    client: liza
+    question: Мне выгоднее стать самозанятой или открыть ИП?
+    must_include: ["57 390"]
 
   # ---------- справка и уточнения ----------
   - id: I01

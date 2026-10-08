@@ -91,3 +91,25 @@ def test_warnings_for_home_screen(clients):
     titles = [w["title"] for w in A.warnings(clients["anya"], TODAY)]
     assert titles[:2] == ["Оплата от бывшего работодателя", "Поступления без чека"]
     assert "Доход близко к лимиту 2,4 млн ₽" in [w["title"] for w in A.warnings(clients["max"], TODAY)]
+
+
+def test_npd_or_ip_comparison(clients):
+    r = A.regimes(clients["max"], TODAY)
+    # ИП на УСН «доходы»: 6 % от 2 250 000 = 135 000; взносы 57 390 + 1 % от 1 950 000 = 76 890 уменьшают налог полностью
+    assert r.usn_tax == 135_000 and r.contributions == 76_890 and r.usn_payable == 58_110 and r.ip_total == 135_000
+    assert r.npd < r.ip_total
+    text = A.answer("compare", clients["max"], CHUNKS, TODAY).text
+    assert "135 000 ₽" in text and "57 390 ₽" in text and "150 000 ₽" in text
+
+
+def test_limit_forecast_uses_account(clients):
+    assert A.detect_intent("Хватит ли мне лимита, если я заработаю ещё 200 тысяч?") == "forecast"
+    assert A.planned_amount("если придёт ещё 300к") == 300_000
+    assert A.planned_amount("Сколько мне осталось до лимита 2,4 млн?") is None
+    text = A.answer("forecast", clients["max"], CHUNKS, TODAY, question="если заработаю ещё 200 тысяч").text
+    assert "превышен на 50 000 ₽" in text
+
+
+def test_client_path_stage(clients):
+    assert [A.stage(clients[c], TODAY) for c in ("liza", "anya", "max")] == [0, 1, 2]
+    assert A.detect_intent("Что мне выгоднее: ИП или самозанятость?") == "compare"

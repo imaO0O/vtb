@@ -117,7 +117,7 @@ VAGUE_RE = re.compile(r"^\s*(?:а\s+|и\s+)?(?:что|как|куда|кому|�
 
 EXAMPLES = ["Какой лимит дохода у самозанятого?", "Можно ли работать как самозанятый на бывшего работодателя?",
             "Что будет, если не сформировать чек?", "Когда платить налог самозанятому?"]
-ACCOUNT_EXAMPLES = ["Сколько мне осталось до лимита?", "По каким поступлениям у меня нет чека?",
+ACCOUNT_EXAMPLES = ["Сколько мне осталось до лимита?", "Что мне выгоднее: ИП или самозанятость?",
                     "Сколько налога мне платить?"]
 MODEL_TEXT = ("Я работаю на открытой отечественной языковой модели GigaChat 3.1 Lightning, которая установлена "
               "внутри контура банка. ChatGPT и другие внешние сервисы не используются. Поиск по закону тоже идёт "
@@ -517,7 +517,7 @@ class Agent:
         intent = account.detect_intent(asked) if client is not None and route == "auto" else None
         if intent:
             step("Смотрю поступления на счёте…")
-            a = account.answer(intent, client, self.index.chunks)
+            a = account.answer(intent, client, self.index.chunks, question=asked)
             result = AgentResult(question, role, "account", "answer", a.text, sources=a.sources, columns=a.columns,
                                  rows=a.rows, stats={"intent": intent})
             return self._done(result, question, asked, t0, user, log, client)

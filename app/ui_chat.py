@@ -9,6 +9,7 @@ from app.ui_common import (APP_NAME, APP_TAGLINE, BADGES, LOGO, ROUTE_LABELS, US
                            health)
 from kbagent import account
 from kbagent.journal import save_feedback
+from kbagent.text import law_text
 
 EXAMPLES = [
     "Какой лимит дохода у самозанятого?",
@@ -16,8 +17,8 @@ EXAMPLES = [
     "Что будет, если не сформировать чек?",
     "Может ли самозанятый получать больничный?",
 ]
-ACCOUNT_EXAMPLES = ["Сколько мне осталось до лимита?", "По каким поступлениям у меня нет чека?",
-                    "Сколько налога мне платить?"]
+ACCOUNT_EXAMPLES = ["Сколько мне осталось до лимита?", "Что мне выгоднее: ИП или самозанятость?",
+                    "По каким поступлениям у меня нет чека?", "Сколько налога мне платить?"]
 LEVEL_ICONS = {"error": ":material/error:", "warning": ":material/warning:", "info": ":material/info:"}
 
 
@@ -52,10 +53,10 @@ def _short(label: str, limit: int = 100) -> str:
 @st.dialog("Источник", width="large")
 def show_source(s: dict) -> None:
     st.markdown(f"**{s['label']}**")
-    st.write(s["text"])
+    st.markdown(law_text(s["text"]))
     for b in s.get("basis") or []:
         with st.expander(f"Основание по закону: {b['label']}", icon=":material/gavel:"):
-            st.write(b["text"])
+            st.markdown(law_text(b["text"]))
             if b.get("url"):
                 st.link_button("Открыть статью", b["url"], icon=":material/open_in_new:")
     if s.get("url"):
@@ -150,12 +151,40 @@ def _hints(client: "account.Client") -> None:
                 st.rerun()
 
 
+PATH_CSS = """
+<style>
+.path { display: flex; gap: .35rem; margin: .4rem 0 .6rem; flex-wrap: wrap; }
+.path div { flex: 1 1 0; min-width: 7.5rem; padding: .45rem .6rem; border-radius: .6rem; font-size: .85rem;
+            background: #F2F5FC; color: #4A5675; border: 1px solid #DCE3F2; }
+.path div.done { background: #E3F4EA; color: #1E6B3C; border-color: #BFE3CC; }
+.path div.now { background: #2350C8; color: #FFFFFF; border-color: #2350C8; font-weight: 600; }
+.path div b { display: block; font-size: .72rem; opacity: .8; font-weight: 500; }
+</style>
+"""
+
+
+def _path(client: "account.Client") -> None:
+    """Путь клиента в банке: где он сейчас и какой следующий шаг."""
+    now = account.stage(client)
+    cells = []
+    for k, name in enumerate(account.STAGES):
+        cls = "done" if k < now else "now" if k == now else ""
+        mark = "✓ пройдено" if k < now else "вы здесь" if k == now else f"шаг {k + 1}"
+        cells.append(f'<div class="{cls}"><b>{mark}</b>{name}</div>')
+    st.markdown(PATH_CSS + '<div class="path">' + "".join(cells) + "</div>", unsafe_allow_html=True)
+    title, question = account.NEXT_STEP[now]
+    if st.button(f"Следующий шаг: {title}", key="next-step", icon=":material/trending_flat:", type="primary"):
+        st.session_state.pending = question
+        st.rerun()
+
+
 def _hero(client: "account.Client | None") -> None:
     st.image(LOGO, width=52)
     st.markdown(f"### {APP_NAME}\n{APP_TAGLINE}")
     st.markdown("Объясняю простыми словами налог для самозанятых. К каждому ответу — ссылка на статью закона или "
                 "разъяснение ФНС. Если ответа в законе нет, честно так и скажу.")
     if client:
+        _path(client)
         _hints(client)
     st.caption("Например:")
     examples = (ACCOUNT_EXAMPLES[:2] + EXAMPLES[:2]) if client and client.is_npd else EXAMPLES

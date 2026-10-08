@@ -52,7 +52,22 @@ RULES = {
     "register": ("fz422", "5", "4", None),
     "register_bank": ("fz422", "5", "5", None),
     "deduction_total": ("fz422", "12", "1", None),
+    "usn_rate": ("nk_rf", "346.20", "1", None),
+    "usn_reduce": ("nk_rf", "346.21", "3.1", None, "без установленного"),
+    "ip_contrib": ("nk_rf", "430", "1.2", None),
+    "usn_notice": ("nk_rf", "346.13", "2", None),
+    "usn_limit": ("nk_rf", "346.13", "4", None),
 }
+
+# ИП на УСН «доходы» без работников (НК РФ): ставка 6 % (п. 1 ст. 346.20, регион может снизить), налог уменьшается
+# на взносы ИП за себя без ограничения (п. 3.1 ст. 346.21); взносы 2026 года — 57 390 ₽ и 1 % с дохода свыше
+# 300 000 ₽ (п. 1.2 ст. 430)
+USN_RATE = 0.06
+IP_FIXED = {2025: 53_658, 2026: 57_390, 2027: 61_154}
+IP_EXTRA_RATE, IP_EXTRA_FROM = 0.01, 300_000
+
+# Путь клиента в банке: от первого дохода к самозанятости и дальше к ИП и расчётному счёту
+STAGES = ["Первый доход", "Самозанятый", "Близко к лимиту", "ИП и расчётный счёт"]
 
 
 @dataclass
@@ -251,14 +266,19 @@ class Refs:
     def __init__(self, chunks: list[Chunk]):
         self.chunks, self.sources, self._n = chunks, [], {}
 
-    def find(self, doc_id: str, article: str, part: str | None, item: str | None) -> Chunk | None:
+    def find(self, doc_id: str, article: str, part: str | None, item: str | None,
+             contains: str | None = None) -> Chunk | None:
+        """Фрагмент со статьёй, частью и пунктом. contains — фраза, ради которой ссылаемся (у длинной части
+        нужное правило может быть в её продолжении)."""
         found = [c for c in self.chunks if c.doc_id == doc_id and c.article == article
                  and (part is None or _covers(c.clause, part)) and (item is None or c.item is None
                                                                     or _covers(c.item, item))]
-        if part is None:
-            return found[0] if found else None      # статья целиком — её начало
+        if contains:
+            found = [c for c in found if contains in c.text] or found
+        if item is None:
+            return found[0] if found else None      # статья или часть целиком — её начало
         # самый узкий фрагмент: «ч. 2, п. 8–9» точнее, чем «ч. 1–2»
-        return min(found, key=lambda c: (c.item is None and item is not None, len(c.text)), default=None)
+        return min(found, key=lambda c: (c.item is None, len(c.text)), default=None)
 
     def __call__(self, rule: str) -> str:
         chunk = self.find(*RULES[rule])
@@ -330,10 +350,43 @@ INTENTS = [
 ]
 
 
+COMPARE_RE = re.compile(r"\bип\b[^?]{0,40}\bили\b[^?]{0,20}самозанят|самозанят\w*[^?]{0,20}\bили\b[^?]{0,20}\bип\b|"
+                        r"выгодн\w*|стоит ли (?:мне )?(?:открыва|переходи|перейти|открыть)\w*|"
+                        r"(?:на|в) ип\b[^?]{0,30}(?:платить|налог|выйдет|обойд)|"
+                        r"(?:платить|плачу|налог\w*|выйдет|обойд\w*)[^?]{0,20}(?:на|в) ип\b|сравни\w*", re.I)
+
+
+FORECAST_RE = re.compile(r"лимит|превыш|не превыс|2[,.]4\s*(?:млн|миллион)|хватит|уложусь|влезу", re.I)
+AMOUNT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(млн\w*|миллион\w*|тыс\w*|т\.?\s?р\.?|к\b|000\b)?", re.I)
+
+
+def planned_amount(question: str) -> float | None:
+    """«ещё 200 тысяч» → 200 000, «1,5 млн» → 1 500 000, «300к» → 300 000; без суммы — None."""
+    for num, unit in AMOUNT_RE.findall(question):
+        value = float(num.replace(",", "."))
+        unit = unit.lower()
+        if unit.startswith(("млн", "миллион")):
+            value *= 1_000_000
+        elif unit.startswith(("тыс", "т")) or unit == "к":
+            value *= 1_000
+        elif unit == "000":
+            value *= 1_000
+        if value >= 1_000 and value != LIMIT:          # «до лимита 2,4 млн» — не плановый доход
+            return value
+    return None
+
+
 def detect_intent(question: str) -> str | None:
     """Вопрос о собственных деньгах клиента: «сколько мне осталось до лимита», «по каким переводам у меня нет чека».
-    Без «я / мне / мой» или с «если / могу ли» вопрос — к закону."""
-    if not FIRST_PERSON_RE.search(question) or HYPOTHETICAL_RE.search(question):
+    Без «я / мне / мой» или с «если / могу ли» вопрос — к закону. «Что мне выгоднее — ИП или самозанятость?» —
+    сравнение на доходе клиента, даже если спрошено в будущем времени («сколько я буду платить на ИП»)."""
+    if not FIRST_PERSON_RE.search(question):
+        return None
+    if COMPARE_RE.search(question):
+        return "compare"
+    if FORECAST_RE.search(question) and planned_amount(question):
+        return "forecast"            # «хватит ли мне лимита, если заработаю ещё 200 тысяч» — считаем по счёту
+    if HYPOTHETICAL_RE.search(question):
         return None
     for name, rx in INTENTS:
         if rx.search(question):
@@ -341,16 +394,125 @@ def detect_intent(question: str) -> str | None:
     return None
 
 
-def answer(intent: str, c: Client, chunks: list[Chunk], now: date | None = None) -> AccountAnswer:
+def answer(intent: str, c: Client, chunks: list[Chunk], now: date | None = None,
+           question: str | None = None) -> AccountAnswer:
     now = now or today()
     ref = Refs(chunks)
-    if not c.is_npd:
+    if intent == "compare":
+        out = _compare(c, ref, now)
+    elif intent == "forecast" and c.is_npd:
+        out = _forecast(c, ref, now, planned_amount(question or "") or 0)
+    elif not c.is_npd:
         out = _not_registered(c, ref, now, intent)
     else:
         out = {"limit": _limit, "tax": _tax, "receipts": _receipts, "employer": _employer, "income": _income,
                "overview": _overview}[intent](c, ref, now)
     out.sources, out.intent = ref.sources, intent
     return out
+
+
+@dataclass
+class Regimes:
+    income: float
+    npd: float                   # налог на профессиональный доход (с остатком бонуса)
+    usn_tax: float               # УСН 6 % до уменьшения
+    contributions: float         # взносы ИП за себя
+    usn_payable: float           # налог УСН после уменьшения на взносы
+    by_kind: dict
+
+    @property
+    def ip_total(self) -> float:
+        return self.usn_payable + self.contributions
+
+
+def regimes(c: Client, now: date) -> Regimes:
+    """Сколько бы клиент заплатил с дохода за год (с начала года до сегодня) как самозанятый и как ИП на УСН."""
+    ops = [o for o in c.operations if o.work and o.day.year == now.year and o.day <= now]
+    if c.is_npd:
+        excluded = {id(o) for o, _ in former_employer_income(c)}
+        ops = [o for o in ops if id(o) not in excluded]
+    by_kind = {"person": sum(o.amount for o in ops if o.payer_kind == "person"),
+               "company": sum(o.amount for o in ops if o.payer_kind == "company")}
+    income = by_kind["person"] + by_kind["company"]
+    bonus = max(DEDUCTION - c.deduction_used, 0.0)
+    npd = sum(by_kind[k] * RATE[k] for k in by_kind) - min(bonus, sum(by_kind[k] * DEDUCTION_RATE[k] for k in by_kind))
+    contributions = IP_FIXED.get(now.year, IP_FIXED[max(IP_FIXED)]) + IP_EXTRA_RATE * max(income - IP_EXTRA_FROM, 0)
+    usn_tax = USN_RATE * income
+    return Regimes(income, round(npd, 2), round(usn_tax, 2), round(contributions, 2),
+                   round(max(usn_tax - contributions, 0), 2), by_kind)
+
+
+def _compare(c: Client, ref: Refs, now: date) -> AccountAnswer:
+    r = regimes(c, now)
+    if not r.income:
+        return AccountAnswer("Поступлений за работу в этом году пока нет — сравнивать не на чем. Ставки самозанятого — "
+                             f"4 % и 6 % {ref('rates')}, у ИП на упрощёнке — 6 % с дохода {ref('usn_rate')} и "
+                             f"обязательные взносы за себя {ref('ip_contrib')}.", [])
+    year = now.year
+    lines = [f"Сравнение на вашем доходе с начала {year} года — {money(r.income)}:",
+             "",
+             f"**Самозанятый:** налог 4 % с оплаты от физлиц и 6 % — от организаций и ИП {ref('rates')}"
+             + (", минус бонус" if c.deduction_used < DEDUCTION else "") + f" — около **{money(r.npd)}**. "
+             "Страховых взносов нет.",
+             "",
+             f"**ИП на упрощёнке «доходы»:** налог 6 % — {money(r.usn_tax)} {ref('usn_rate')}; обязательные взносы "
+             f"за себя за полный год — {money(IP_FIXED.get(year, IP_FIXED[max(IP_FIXED)]))} и 1 % с дохода свыше "
+             "300 000 ₽, всего "
+             f"{money(r.contributions)} {ref('ip_contrib')}. ИП без работников уменьшает налог на всю сумму взносов "
+             f"{ref('usn_reduce')}, поэтому налог к уплате — {money(r.usn_payable)}, а всего с взносами — "
+             f"**{money(r.ip_total)}**.",
+             ""]
+    diff = r.ip_total - r.npd
+    if diff > 0:
+        lines.append(f"По расчёту самозанятость сейчас дешевле на {money(diff)}. У ИП взносы идут на пенсионное и "
+                     "медицинское страхование, а доход на упрощёнке ограничен 450 млн ₽, а не 2,4 млн ₽ "
+                     f"{ref('usn_limit')}.")
+    else:
+        lines.append(f"На вашем доходе ИП обходится не дороже самозанятости (разница {money(-diff)}), а взносы идут "
+                     "на пенсионное и медицинское страхование.")
+    total, _, _ = year_income(c, now)
+    if c.is_npd and total >= WARN_SHARE * LIMIT:
+        lines.append(f"До лимита самозанятого осталось {money(max(LIMIT - total, 0))} {ref('limit')}. Если доход его "
+                     f"превысит, на упрощёнку нужно перейти в течение 20 календарных дней {ref('to_usn')}.")
+    else:
+        lines.append(f"Новый ИП может перейти на упрощёнку, уведомив налоговую не позднее 30 дней с регистрации "
+                     f"{ref('usn_notice')}.")
+    lines.append("\n_Расчёт банка без региональных льгот: регион может снизить ставку УСН. Предложение банка:_ "
+                 "открыть ИП и расчётный счёт с эквайрингом можно в приложении — помощник подскажет шаги.")
+    return AccountAnswer("\n".join(lines), [])
+
+
+def _forecast(c: Client, ref: Refs, now: date, extra: float) -> AccountAnswer:
+    """«Хватит ли мне лимита, если заработаю ещё 200 тысяч?» — доход с начала года плюс плановая сумма."""
+    total, _, _ = year_income(c, now)
+    after = total + extra
+    lines = [f"С начала {now.year} года вам пришло {money(total)} оплаты за работу. Вместе с ещё {money(extra)} "
+             f"будет {money(after)}. Лимит для самозанятых — 2,4 млн ₽ за календарный год {ref('limit')}."]
+    if after <= LIMIT:
+        lines.append(f"Лимита хватит: после этой суммы останется {money(LIMIT - after)}.")
+    else:
+        lines.append(f"**Не хватит:** лимит будет превышен на {money(after - LIMIT)}; до него сейчас осталось "
+                     f"{money(max(LIMIT - total, 0))}. Право применять налог на профессиональный доход теряется со дня "
+                     f"превышения {ref('lose_right')}, после этого есть 20 календарных дней, чтобы перейти на "
+                     f"упрощёнку {ref('to_usn')}.")
+        lines.append("\n_Предложение банка:_ если такой доход ожидается, откройте ИП и расчётный счёт заранее. Сколько "
+                     "вы будете платить как ИП, покажет вопрос «Что мне выгоднее: ИП или самозанятость?».")
+    return AccountAnswer("\n".join(lines), [])
+
+
+def stage(c: Client, now: date | None = None) -> int:
+    """Этап пути клиента (индекс в STAGES): 0 — получает первые деньги за работу, 1 — самозанятый,
+    2 — доход близко к лимиту (пора думать об ИП). Этап 3 — ИП с расчётным счётом — следующий шаг."""
+    now = now or today()
+    if not c.is_npd:
+        return 0
+    total, _, _ = year_income(c, now)
+    return 2 if total >= WARN_SHARE * LIMIT else 1
+
+
+NEXT_STEP = {0: ("Как стать самозанятым и сколько платить?", "Как зарегистрироваться самозанятым?"),
+             1: ("Что проверить по счёту?", "Всё ли у меня в порядке с налогами?"),
+             2: ("Пора думать об ИП", "Что мне выгоднее: ИП или самозанятость?")}
 
 
 def _limit(c: Client, ref: Refs, now: date) -> AccountAnswer:
@@ -367,7 +529,8 @@ def _limit(c: Client, ref: Refs, now: date) -> AccountAnswer:
                      "чтобы перейти на упрощённую систему налогообложения: ИП — со дня снятия с учёта, "
                      f"а если вы не ИП — нужно за эти 20 дней зарегистрироваться как ИП {ref('to_usn')}.")
         lines.append("\n_Предложение банка, а не требование закона:_ откройте ИП и расчётный счёт заранее — "
-                     "банк подскажет шаги и подключит эквайринг, чтобы перейти без перерыва в работе.")
+                     "банк подскажет шаги и подключит эквайринг, чтобы перейти без перерыва в работе. Сколько вы "
+                     "будете платить как ИП, покажет вопрос «Что мне выгоднее: ИП или самозанятость?».")
     return AccountAnswer("\n".join(lines).replace(" .", "."), [])
 
 
